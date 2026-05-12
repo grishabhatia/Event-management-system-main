@@ -1,11 +1,28 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { authenticate } from '../middleware/auth.js';
 import { authorizeRoles } from '../middleware/roles.js';
 import { registerForEvent, myRegistrations, participantsForEvent, checkInParticipant, exportParticipantsCsv, checkRegistrationStatus } from '../controllers/registrationController.js';
 
 const router = Router();
+const registrationRateLimiter = rateLimit({
+  windowMs:
+    process.env.REGISTRATION_RATE_LIMIT_WINDOW_MS || 60 * 1000,
+  max: process.env.REGISTRATION_RATE_LIMIT_MAX || 5,
+  message: {
+    message: 'Too many registration attempts. Please try again later.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-router.post('/:id/register', authenticate, authorizeRoles('customer', 'organizer', 'admin'), registerForEvent);
+router.post(
+  '/:id/register',
+  registrationRateLimiter,
+  authenticate,
+  authorizeRoles('customer', 'organizer', 'admin'),
+  registerForEvent
+);
 router.get('/me', authenticate, myRegistrations);
 router.get('/:id/status', authenticate, checkRegistrationStatus);
 router.get('/:id/participants', authenticate, authorizeRoles('organizer', 'admin'), participantsForEvent);
