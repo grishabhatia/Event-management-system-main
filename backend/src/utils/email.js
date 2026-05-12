@@ -83,7 +83,7 @@ export async function sendTicketEmail(to, event, registrationId, qrCodeBuffer) {
       </div>
     </div>
     <div style="background-color: #f1f5f9; padding: 16px; text-align: center; color: #94a3b8; font-size: 12px;">
-      &copy; ${new Date().getFullYear()} Campus Events. All rights reserved.
+      © ${new Date().getFullYear()} ${env.appName}. All rights reserved.
     </div>
   </div>
   `;

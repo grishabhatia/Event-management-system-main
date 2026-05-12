@@ -7,6 +7,10 @@ import Review from './models/Review.js';
 import { generateQRCodeDataUrl } from './utils/qrcode.js';
 
 async function run() {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('❌  DO NOT run seed.js in production — it will wipe all data!');
+    process.exit(1);
+  }
   await connectDB();
   await Promise.all([
     User.deleteMany({}),

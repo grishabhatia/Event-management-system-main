@@ -38,7 +38,7 @@
 
 ## 🌟 Overview
 
-**EventManager** is a complete, production-ready event management platform that bridges the gap between event organizers and attendees. Customers can discover events, register with one click, download beautifully branded **QR-coded PDF tickets**, and post reviews. Organizers get a full dashboard to create and manage events, view participant lists, export CSVs, and perform **real-time check-ins** via Socket.IO — all in a responsive, dark-mode-ready UI.
+**eventone** is a complete, production-ready event management platform that bridges the gap between event organizers and attendees. Customers can discover events, register with one click, download beautifully branded **QR-coded PDF tickets**, and post reviews. Organizers get a full dashboard to create and manage events, view participant lists, export CSVs, and perform **real-time check-ins** via Socket.IO — all in a responsive, dark-mode-ready UI.
 
 <br/>
 
