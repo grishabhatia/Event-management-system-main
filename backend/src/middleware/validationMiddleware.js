@@ -1,47 +1,47 @@
-const { body, validationResult } = require("express-validator");
+import { body, validationResult } from 'express-validator';
 
-const signupValidation = [
-  body("name")
+export const signupValidation = [
+  body('name')
     .trim()
     .notEmpty()
-    .withMessage("Name is required")
+    .withMessage('Name is required')
     .isLength({ min: 2 })
-    .withMessage("Name must be at least 2 characters long"),
+    .withMessage('Name must be at least 2 characters long'),
 
-  body("email")
+  body('email')
     .trim()
     .notEmpty()
-    .withMessage("Email is required")
+    .withMessage('Email is required')
     .isEmail()
-    .withMessage("Please provide a valid email"),
+    .withMessage('Please provide a valid email'),
 
-  body("password")
+  body('password')
     .notEmpty()
-    .withMessage("Password is required")
+    .withMessage('Password is required')
     .isLength({ min: 6 })
-    .withMessage("Password must be at least 6 characters long"),
+    .withMessage('Password must be at least 6 characters long'),
 
-  body("role")
+  body('role')
     .notEmpty()
-    .withMessage("Role is required")
-    .isIn(["customer", "organizer"])
-    .withMessage("Role must be either customer or organizer"),
+    .withMessage('Role is required')
+    .isIn(['customer', 'organizer'])
+    .withMessage('Role must be either customer or organizer'),
 ];
 
-const loginValidation = [
-  body("email")
+export const loginValidation = [
+  body('email')
     .trim()
     .notEmpty()
-    .withMessage("Email is required")
+    .withMessage('Email is required')
     .isEmail()
-    .withMessage("Please provide a valid email"),
+    .withMessage('Please provide a valid email'),
 
-  body("password")
+  body('password')
     .notEmpty()
-    .withMessage("Password is required"),
+    .withMessage('Password is required'),
 ];
 
-const validate = (req, res, next) => {
+export const validate = (req, res, next) => {
   const errors = validationResult(req);
 
   if (!errors.isEmpty()) {
@@ -55,10 +55,4 @@ const validate = (req, res, next) => {
   }
 
   next();
-};
-
-module.exports = {
-  signupValidation,
-  loginValidation,
-  validate,
 };
