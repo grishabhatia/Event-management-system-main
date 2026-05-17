@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { authorizeRoles } from '../middleware/roles.js';
 import { registrationRateLimiter } from '../middleware/rateLimiters.js';
-import { registerForEvent, myRegistrations, participantsForEvent, checkInParticipant, exportParticipantsCsv, checkRegistrationStatus } from '../controllers/registrationController.js';
+import { registerForEvent, myRegistrations, participantsForEvent, checkInParticipant, exportParticipantsCsv, checkRegistrationStatus,cancelRegistration } from '../controllers/registrationController.js';
 
 const router = Router();
 
@@ -18,6 +18,9 @@ router.get('/:id/status', authenticate, checkRegistrationStatus);
 router.get('/:id/participants', authenticate, authorizeRoles('organizer', 'admin'), participantsForEvent);
 router.post('/:id/checkin', authenticate, authorizeRoles('organizer', 'admin'), checkInParticipant);
 router.get('/:id/participants.csv', authenticate, authorizeRoles('organizer', 'admin'), exportParticipantsCsv);
+
+// End point to cancel registration
+router.delete("/:id/cancel",authenticate,cancelRegistration);
 
 export default router;
 

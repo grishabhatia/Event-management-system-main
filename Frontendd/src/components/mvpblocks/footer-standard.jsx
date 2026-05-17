@@ -241,10 +241,7 @@ export default function FooterStandard() {
           <p>
             &copy; {currentYear} Eventone | All rights reserved
           </p>
-
-          <div className="flex items-center gap-4">
-
-            {data().bottomLinks.map(({ href, label }) => (
+        </div>
 
         {/* Divider */}
         <div className="h-px bg-slate-200 my-10"></div>

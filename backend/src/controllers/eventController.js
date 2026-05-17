@@ -61,6 +61,11 @@ export const updateEvent = async (req, res) => {
       });
     }
 
+    if (oldEvent.status === 'rejected') {
+      update.status = 'pending';
+      update.rejectionReason = '';
+    }
+
     const event = await Event.findOneAndUpdate(
       {
         _id: req.params.id,
