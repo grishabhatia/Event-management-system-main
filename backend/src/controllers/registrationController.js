@@ -2,6 +2,7 @@ import Event from '../models/Event.js';
 import Registration from '../models/Registration.js';
 import { generateQRCodeDataUrl } from '../utils/qrcode.js';
 import { sendEmail } from '../utils/email.js';
+import path from 'path';
 
 export const registerForEvent = async (req, res) => {
   try {
@@ -46,11 +47,10 @@ export const registerForEvent = async (req, res) => {
   }
 };
 
-// Secure check-in handler (from fix/10-checkin-organizer-ownership)
+// Secure check-in handler with Socket.IO real-time emission (feat/17)
 export const checkInParticipant = async (req, res) => {
   try {
     // Auth context validation
-    // Verify caller is authenticated; auth middleware should populate req.user
     if (!req.user) {
       console.warn('[AUTH] Check-in attempt without auth context');
       return res.status(401).json({ message: 'Unauthorized: user not authenticated' });
@@ -96,22 +96,24 @@ export const checkInParticipant = async (req, res) => {
     );
 
     if (!reg) return res.status(404).json({ message: 'Registration not found for this user/event' });
-    // Socket.IO real-time emission (feat/17)
+
+    // Socket.IO real-time check-in emission (feat/17)
     try {
       await reg.populate('user', 'name');
       const { emitCheckinSuccess } = await import('../services/socket.js');
       const payload = {
         registrationId: reg._id,
-        user: reg.user,
-        checkedInAt: reg.checkedInAt || new Date(),
-        event: reg.event
+        eventId: req.params.id,
+        checkedInAt: reg.checkedInAt,
+        status: reg.status,
+        user: {
+          id: reg.user?._id,
+          name: reg.user?.name || ''
+        }
       };
-      // emit to registration-specific channel
-      emitCheckinSuccess(reg._id.toString(), payload);
-      // also emit to event room for live participant lists
-      emitCheckinSuccess(req.params.id, { registrationId: reg._id, user: reg.user, checkedInAt: reg.checkedInAt || new Date() });
+      emitCheckinSuccess(req.params.id, payload);
     } catch (emitErr) {
-      console.warn('[SOCKET] emitCheckinSuccess failed', emitErr);
+      console.error('[CHECKIN_EMIT] Failed to emit realtime checkin event', emitErr);
     }
 
     res.json({ registration: reg });
@@ -174,43 +176,25 @@ export const exportParticipantsCsv = async (req, res) => {
     }).populate('user', 'name email');
 
     res.setHeader('Content-Type', 'text/csv');
-
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename=participants-${eventId}.csv`
-    );
+    res.setHeader('Content-Disposition', `attachment; filename=participants-${eventId}.csv`);
 
     const esc = (value) => {
       if (value === undefined || value === null) {
         return '';
       }
-
-      const str =
-        typeof value === 'string'
-          ? value
-          : String(value);
-
+      const str = typeof value === 'string' ? value : String(value);
       return `"${str.replace(/"/g, '""')}"`;
     };
 
-    res.write(
-      ['Name', 'Email', 'Status', 'Registered At']
-        .map(esc)
-        .join(',') + '\n'
-    );
+    res.write(['Name', 'Email', 'Status', 'Registered At'].map(esc).join(',') + '\n');
 
     for (const registration of registrations) {
       const row = [
         registration.user?.name || '',
         registration.user?.email || '',
         registration.status || '',
-        registration.createdAt
-          ? new Date(
-            registration.createdAt
-          ).toISOString()
-          : ''
+        registration.createdAt ? new Date(registration.createdAt).toISOString() : ''
       ];
-
       res.write(row.map(esc).join(',') + '\n');
     }
 
