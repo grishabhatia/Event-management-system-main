@@ -19,6 +19,13 @@ export const signup = async (req, res) => {
     });
   }
 
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: Object.values(err.errors).map((error) => error.message).join(', '),
+    });
+  }
+
   res.status(500).json({
     success: false,
     message: 'Something went wrong. Please try again later.',
@@ -46,6 +53,13 @@ export const login = async (req, res) => {
     });
   }
 
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: Object.values(err.errors).map((error) => error.message).join(', '),
+    });
+  }
+
   res.status(500).json({
     success: false,
     message: 'Something went wrong. Please try again later.',
@@ -65,6 +79,13 @@ export const me = async (req, res) => {
     return res.status(409).json({
       success: false,
       message: 'Email already exists',
+    });
+  }
+
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: Object.values(err.errors).map((error) => error.message).join(', '),
     });
   }
 
@@ -112,6 +133,13 @@ export const updateProfile = async (req, res) => {
     return res.status(409).json({
       success: false,
       message: 'Email already exists',
+    });
+  }
+
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: Object.values(err.errors).map((error) => error.message).join(', '),
     });
   }
 
