@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, MapPin, Ticket, X, Download } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useAuth } from '../../context/AuthContext';
+import toast from "react-hot-toast";
 import { Link } from 'react-router-dom';
 import { API_BASE_URL } from '../../config';
 import { generateCertificate } from '../../utils/generateCertificate';
@@ -62,30 +63,48 @@ export default function CustomerDashboard() {
         }
     };
 
-    const handleRegister = async (eventId) => {
-        try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${API_BASE_URL}/api/registrations/${eventId}/register`, {
+   const handleRegister = async (eventId) => {
+    const loadingToast = toast.loading("Registering for event...");
+
+    try {
+        const token = localStorage.getItem('token');
+
+        const res = await fetch(
+            `${API_BASE_URL}/api/registrations/${eventId}/register`,
+            {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${token}`
                 }
+            }
+        );
+
+        const data = await res.json();
+
+        if (res.ok) {
+            toast.success('Successfully registered!', {
+                id: loadingToast,
             });
 
-            if (res.ok) {
-                alert('Successfully registered!');
-                // Refresh data
-                setActiveTab('Upcoming Tickets');
-            } else {
-                const data = await res.json();
-                alert(data.message || 'Registration failed');
-            }
-        } catch (error) {
-            console.error("Registration failed", error);
-            alert('Something went wrong');
+            // Refresh registrations
+            fetchRegistrations();
+
+            // Switch tab
+            setActiveTab('Upcoming Tickets');
+        } else {
+            toast.error(data.message || 'Registration failed', {
+                id: loadingToast,
+            });
         }
-    };
+    } catch (error) {
+        console.error("Registration failed", error);
+
+        toast.error('Something went wrong', {
+            id: loadingToast,
+        });
+    }
+};
 
 
     const handleDownloadTicket = async () => {
@@ -150,6 +169,8 @@ export default function CustomerDashboard() {
             pdf.save(fileName);
         } catch (error) {
             console.error('PDF generation failed:', error);
+
+            toast.error("Failed to download ticket");
         }
     };
 
