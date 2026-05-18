@@ -8,6 +8,7 @@ import "./index.css";
 import Footer from "./components/mvpblocks/footer-standard";
 import Header2 from "./components/mvpblocks/header-2";
 import Home from "./pages/Home";
+import { useEffect, useState } from "react";
 import Features from "./pages/Features";
 import Pricing from "./pages/Pricing";
 import Contact from "./pages/Contact";
@@ -23,7 +24,6 @@ import AdminDashboard from "./pages/dashboard/AdminDashboard";
 import ThankYou from "./pages/ThankYou";
 import { useAuth } from "./context/AuthContext";
 import ScrollToTop from "./components/ui/ScrollToTop";
-
 
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -51,12 +51,21 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 };
 
 const App = () => {
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    if(darkMode){
+      document.documentElement.classList.add("dark");
+    }else{
+      document.documentElement.classList.remove("dark");
+    } 
+  },[darkMode]);
   return (
     <BrowserRouter>
       <ScrollToTop />
       <div className="min-h-screen flex flex-col">
         {/* Header */}
-        <Header2 />
+        <Header2 darkMode={darkMode} setDarkMode={setDarkMode} />  
 
         <main className="flex-grow">
           <Routes>
