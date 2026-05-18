@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import CountdownTimer from '../../components/CountdownTimer';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, MapPin, Users, Plus, Upload, Tag, Search, TrendingUp, IndianRupee, Clock, CheckCircle, XCircle, AlertCircle, Download, Trash2 } from 'lucide-react';
@@ -366,9 +367,10 @@ export default function OrganizerDashboard() {
                                                             </p>
                                                             <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
                                                                 <span className="flex items-center">
-                                                                    <Calendar className="w-3 h-3 mr-1.5" />
+                                                                   <Calendar className="w-3 h-3 mr-1.5" />
                                                                     {new Date(event.date).toLocaleDateString()}
                                                                 </span>
+                                                                <CountdownTimer eventDate={event.date} />
                                                                 <span className="flex items-center">
                                                                     <MapPin className="w-3 h-3 mr-1.5" />
                                                                     {event.location}

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import CountdownTimer from '../../components/CountdownTimer';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, MapPin, Ticket, X, Download } from 'lucide-react';
 import { Button } from '../../components/ui/button';
@@ -320,9 +321,12 @@ const pastEvents = [
                                                             </p>
                                                             <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
                                                                 <span className="flex items-center">
-                                                                    <Calendar className="w-3 h-3 mr-1.5" />
-                                                                    {reg.event?.date ? new Date(reg.event.date).toLocaleDateString() : 'TBA'}
-                                                                </span>
+                                                                     <Calendar className="w-3 h-3 mr-1.5" />
+                                                                     {reg.event?.date ? new Date(reg.event.date).toLocaleDateString() : 'TBA'}
+                                                               </span>
+                                                                     {reg.event?.date && (
+                                                                    <CountdownTimer eventDate={reg.event.date} />
+                                                                    )}
                                                                 <span className="flex items-center">
                                                                     <MapPin className="w-3 h-3 mr-1.5" />
                                                                     {reg.event?.location || 'TBA'}
