@@ -3,46 +3,64 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, MapPin, Ticket } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useAuth } from '../../context/AuthContext';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import toast from "react-hot-toast";
+import {
+  Link,
+  useNavigate,
+  useSearchParams
+} from 'react-router-dom';
 import { API_BASE_URL } from '../../config';
 import ConfirmationModal from '../../components/ui/confirmation-modal';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
 export default function CustomerDashboard() {
-  const { user } = useAuth();
-  const [registrations, setRegistrations] = useState([]);
-  const [availableEvents, setAvailableEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('Upcoming Tickets');
-  const [selectedTicket, setSelectedTicket] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedRegistrationId, setSelectedRegistrationId] = useState(null);
-  const ticketRef = useRef(null);
-  const mountedRef = useRef(true);
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+    const { user } = useAuth();
+    const [registrations, setRegistrations] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState('Upcoming Tickets');
+    const [selectedTicket, setSelectedTicket] = useState(null);
+    const ticketRef = useRef(null);
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
 
-  useEffect(() => () => (mountedRef.current = false), []);
+    const [availableEvents, setAvailableEvents] = useState([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [selectedRegistrationId, setSelectedRegistrationId] = useState(null);
 
-  const fetchAvailableEvents = useCallback(async () => {
-    try {
-      if (mountedRef.current) setLoading(true);
-      const tags = searchParams.get('tags');
-      let url = `${API_BASE_URL}/api/events?status=approved`;
-      if (tags) url += `&tags=${tags}`;
-      const res = await fetch(url);
-      if (res.ok && mountedRef.current) {
-        const data = await res.json();
-        const upcoming = (data.events || []).filter((e) => new Date(e.date) >= new Date());
-        setAvailableEvents(upcoming);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      if (mountedRef.current) setLoading(false);
-    }
-  }, [searchParams]);
+    useEffect(() => {
+        if (activeTab === 'Browse Events') {
+            fetchAvailableEvents();
+        } else {
+            fetchRegistrations();
+        }
+    }, [activeTab, searchParams]);
+
+    const fetchAvailableEvents = async () => {
+        const tags = searchParams.get('tags');
+        try {
+            setLoading(true);
+            let url = `${API_BASE_URL}/api/events?status=approved`;
+
+            if (tags) {
+                url += `&tags=${tags}`;
+            }
+
+    const res = await fetch(url);
+            if (res.ok) {
+                const data = await res.json();
+                // Filter events that are in the future
+                const upcoming = (data.events || []).filter(evt => new Date(evt.date) >= new Date());
+                setAvailableEvents(upcoming);
+            }
+        } catch (error) {
+            console.error("Failed to fetch events", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+    };
+
 
   const fetchRegistrations = useCallback(async () => {
     try {
@@ -227,14 +245,7 @@ export default function CustomerDashboard() {
                                 </>
                               )}
                             </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+                        )}
 
             {activeTab === 'Past Events' && (
               <div className="space-y-6">
@@ -263,31 +274,87 @@ export default function CustomerDashboard() {
               </div>
             )}
 
-            {activeTab === 'Browse Events' && (
-              <div className="space-y-6">
-                {availableEvents.length === 0 ? (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full h-80 border border-dashed border-border rounded-2xl flex flex-col items-center justify-center text-center p-6">
-                    <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4"><Calendar className="w-8 h-8 text-muted-foreground" /></div>
-                    <h3 className="text-lg font-medium text-foreground">No upcoming events found</h3>
-                    <p className="text-muted-foreground mt-2 max-w-sm">Check back later for new events!</p>
-                  </motion.div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-6">
-                    {availableEvents.map((evt, idx) => {
-                      const registration = registrations.find((r) => r.event?._id === evt._id && r.status !== 'cancelled');
-                      const isRegistered = registration?.status === 'registered';
-                      const registeredCount = evt.registeredCount || 0;
-                      const isFull = evt.capacity > 0 && registeredCount >= evt.capacity;
-                      return (
-                        <motion.div key={evt._id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }} className="group relative bg-card border border-border rounded-2xl p-4 hover:border-rose-500/50 transition-colors shadow-sm">
-                          <div className="flex flex-col md:flex-row gap-6">
-                            <div className="w-full md:w-56 h-36 rounded-xl overflow-hidden shrink-0 bg-muted relative">{evt.posterUrl ? <img src={evt.posterUrl} alt={evt.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : <div className="flex items-center justify-center h-full text-muted-foreground"><Calendar className="w-8 h-8" /></div>}<div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" /><span className="absolute bottom-2 left-2 text-xs text-white/90 font-medium px-2 py-0.5 bg-black/40 backdrop-blur-sm rounded">{evt.category}</span></div>
+const isEventFullBooked =
+    evt.registeredCount >= evt.capacity;
 
-                          <div className="flex-1 flex flex-col justify-between">
-                            <div>
-                              <div className="flex justify-between items-start"><h3 className="text-lg font-semibold text-foreground group-hover:text-rose-500 transition-colors">{evt.title}</h3><span className="inline-flex items-center text-xs px-2 py-1 rounded-full border bg-blue-500/10 text-blue-500 border-blue-500/20">{evt.capacity ? `${evt.capacity} Spots` : 'Open'}</span></div>
-                              <p className="text-muted-foreground text-sm mt-2 line-clamp-2 max-w-2xl">{evt.description}</p>
-                              <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground"><span className="flex items-center"><Calendar className="w-3 h-3 mr-1.5" />{new Date(evt.date).toLocaleDateString()}</span><span className="flex items-center"><MapPin className="w-3 h-3 mr-1.5" />{evt.location}</span></div>
+return (
+                                                <motion.div
+                                                    key={evt._id}
+                                                    layout
+                                                    initial={{ opacity: 0, y: 10 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    transition={{ delay: idx * 0.05 }}
+                                                    className="group relative bg-card border border-border rounded-2xl p-4 hover:border-rose-500/50 transition-colors shadow-sm"
+                                                >
+                                                    <div className="flex flex-col md:flex-row gap-6">
+                                                        <div className="w-full md:w-56 h-36 rounded-xl overflow-hidden shrink-0 bg-muted relative">
+                                                            {evt.posterUrl ? (
+                                                                <img
+                                                                    src={evt.posterUrl}
+                                                                    alt={evt.title}
+                                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                                />
+                                                            ) : (
+                                                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                                                    <Calendar className="w-8 h-8" />
+                                                                </div>
+                                                            )}
+                                                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                                                            <span className="absolute bottom-2 left-2 text-xs text-white/90 font-medium px-2 py-0.5 bg-black/40 backdrop-blur-sm rounded">
+                                                                {evt.category}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="flex-1 flex flex-col justify-between">
+                                                            <div>
+                                                                <div className="flex justify-between items-start">
+                                                                    <h3 className="text-lg font-semibold text-foreground group-hover:text-rose-500 transition-colors">
+                                                                        {evt.title}
+                                                                    </h3>
+                                                                    <span className="inline-flex items-center text-xs px-2 py-1 rounded-full border bg-blue-500/10 text-blue-500 border-blue-500/20">
+                                                                        {evt.capacity ? `${evt.capacity} Spots` : 'Open'}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-muted-foreground text-sm mt-2 line-clamp-2 max-w-2xl">
+                                                                    {evt.description}
+                                                                </p>
+                                                                <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
+                                                                    <span className="flex items-center">
+                                                                        <Calendar className="w-3 h-3 mr-1.5" />
+                                                                        {new Date(evt.date).toLocaleDateString()}
+                                                                    </span>
+                                                                    <span className="flex items-center">
+                                                                        <MapPin className="w-3 h-3 mr-1.5" />
+                                                                        {evt.location}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex justify-end pt-4 md:pt-0">
+                                                                {isRegistered ? (
+                                                                    <Button disabled variant="success" className="text-xs h-8 bg-green-600 text-white opacity-75">
+                                                                        Registered
+                                                                    </Button>
+                                                                ) : isEventFullBooked ? (
+                                                                    <Button disabled variant="secondary" className="text-xs h-8">
+                                                                        Fully Booked
+                                                                    </Button>
+                                                                ) : (
+                                                                    <Button
+                                                                        className="text-xs h-8 bg-rose-600 hover:bg-rose-700 text-white"
+                                                                        onClick={() => handleRegister(evt._id)}
+                                                                    >
+                                                                        Register Now
+                                                                    </Button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex justify-end pt-4 md:pt-0">

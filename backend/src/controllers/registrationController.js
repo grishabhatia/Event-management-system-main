@@ -14,7 +14,6 @@ export const registerForEvent = async (req, res) => {
       return res.status(400).json({ message: 'Event not available' });
     }
 
-
     // Check existing registration
     const existingRegistration = await Registration.findOne({
       user: req.user.id,
@@ -29,56 +28,62 @@ export const registerForEvent = async (req, res) => {
       return res.status(400).json({ message: 'Already registered or waitlisted' });
     }
 
-    // Count confirmed registrations only
-    const registeredCount = await Registration.countDocuments({
-      event: event._id,
-      status: 'registered',
-    });
+    // Atomically increment registeredCount only if under capacity
+    const updatedEvent = await Event.findOneAndUpdate(
+      { _id: event._id, status: 'approved', $expr: { $lt: ['$registeredCount', '$capacity'] } },
+      { $inc: { registeredCount: 1 } },
+      { new: true }
+    );
 
-    const isFull = registeredCount >= event.capacity;
-
-    let qrCodeDataUrl = null;
-
-    // QR only for confirmed users
-    if (!isFull) {
-      const payload = JSON.stringify({
-        userId: req.user.id,
-        eventId: event._id,
-        at: Date.now(),
-      });
-      qrCodeDataUrl = await generateQRCodeDataUrl(payload);
+    // Event is full — reject immediately, no registration created
+    if (!updatedEvent) {
+      return res.status(400).json({ message: 'Event is full' });
     }
+
+    const payload = JSON.stringify({
+      userId: req.user.id,
+      eventId: event._id,
+      at: Date.now(),
+    });
+    const qrCodeDataUrl = await generateQRCodeDataUrl(payload);
 
     let registration;
 
     // Reuse cancelled registration
     if (existingRegistration && existingRegistration.status === 'cancelled') {
-      existingRegistration.status = isFull ? 'waitlisted' : 'registered';
+      existingRegistration.status = 'registered';
       existingRegistration.qrCodeDataUrl = qrCodeDataUrl;
       registration = await existingRegistration.save();
     } else {
-      registration = await Registration.create({
-        user: req.user.id,
-        event: event._id,
-        qrCodeDataUrl,
-        status: isFull ? 'waitlisted' : 'registered',
-      });
+      try {
+        registration = await Registration.create({
+          user: req.user.id,
+          event: event._id,
+          qrCodeDataUrl,
+          status: 'registered',
+        });
+      } catch (dupErr) {
+        if (dupErr.code === 11000) {
+          // Undo the registeredCount increment
+          await Event.findByIdAndUpdate(event._id, { $inc: { registeredCount: -1 } });
+          return res.status(400).json({ message: 'Already registered or waitlisted' });
+        }
+        throw dupErr;
+      }
     }
 
     // Send email
     try {
       await sendEmail({
         to: req.user.email,
-        subject: isFull ? `Waitlisted: ${event.title}` : `Registered: ${event.title}`,
-        html: isFull
-          ? `<p>${event.title} is full.</p><p>You have been added to the waitlist.</p>`
-          : `<p>You are registered for ${event.title}.</p>`,
+        subject: `Registered: ${event.title}`,
+        html: `<p>You are registered for ${event.title}.</p>`,
       });
     } catch (_) {}
 
     res.status(201).json({
       registration,
-      message: isFull ? 'Added to waitlist' : 'Successfully registered',
+      message: 'Successfully registered',
     });
   } catch (err) {
     console.error('ERROR:', err);
@@ -301,7 +306,6 @@ export const promoteFromWaitlist = async (eventId) => {
   nextRegistration.status = 'registered';
   nextRegistration.qrCodeDataUrl = qrCodeDataUrl;
   await nextRegistration.save();
-
 
   try {
     await sendEmail({

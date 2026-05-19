@@ -1,5 +1,12 @@
 import { Router } from 'express';
-import { signup, login, me, updateProfile } from '../controllers/authController.js';
+
+import {
+  signup,
+  login,
+  me,
+  updateProfile
+} from '../controllers/authController.js';
+
 import { authenticate } from '../middleware/auth.js';
 import { authRateLimiter } from '../middleware/rateLimiters.js';
 import {
@@ -10,6 +17,7 @@ import {
 
 const router = Router();
 
+// Auth Routes
 router.post(
   '/signup',
   authRateLimiter,
@@ -26,6 +34,7 @@ router.post(
   login
 );
 
+// User Routes
 router.get('/me', authenticate, me);
 router.put('/profile', authenticate, updateProfile);
 

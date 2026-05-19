@@ -13,7 +13,7 @@ const router = Router();
 
 router.post(
   '/:id/register',
-  registrationRateLimiter,
+  registrationLimiter,
   authenticate,
   authorizeRoles('customer', 'organizer', 'admin'),
   registerForEvent
