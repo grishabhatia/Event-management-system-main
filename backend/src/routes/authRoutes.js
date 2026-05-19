@@ -1,6 +1,14 @@
 import { Router } from 'express';
-import { signup, login, me, updateProfile } from '../controllers/authController.js';
+
+import {
+  signup,
+  login,
+  me,
+  updateProfile
+} from '../controllers/authController.js';
+
 import { authenticate } from '../middleware/auth.js';
+import { authRateLimiter } from '../middleware/rateLimiters.js';
 import {
   signupValidation,
   loginValidation,
@@ -8,25 +16,25 @@ import {
 } from '../middleware/validationMiddleware.js';
 
 const router = Router();
+
+// Auth Routes
 router.post(
   '/signup',
+  authRateLimiter,
   signupValidation,
   validate,
   signup
-const parsedAuthWindowMs = Number.parseInt(
-  process.env.AUTH_RATE_LIMIT_WINDOW_MS ?? '',
-  10
 );
 
 router.post(
   '/login',
+  authRateLimiter,
   loginValidation,
   validate,
   login
 );
-router.post('/signup', authRateLimiter, signup);
-router.post('/login', authRateLimiter, login);
 
+// User Routes
 router.get('/me', authenticate, me);
 router.put('/profile', authenticate, updateProfile);
 
