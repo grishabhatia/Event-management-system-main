@@ -10,7 +10,7 @@ const registrationSchema = new mongoose.Schema(
     // Payment field that must be added by issue 76 - Feature: Integrate Razorpay Payment Gateway for paid event tickets 
     paymentId:{type:String,default:null},
     orderId:{type:String,default:null},
-    paymentStatus:{type:String,enum: ['pending', 'paid', 'failed', 'refunded'],default:'pending'},
+    paymentStatus:{type:String,enum: ['pending', 'paid', 'failed', 'refunded','not_applicable'],default:'not_applicable'},
 
     // Required fields for refund-flow
     refundedAt: {type: Date},
