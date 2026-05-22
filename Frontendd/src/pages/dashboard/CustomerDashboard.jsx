@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar,
@@ -9,13 +9,14 @@ import {
   Search,
   Heart,
 } from "lucide-react";
+import { io } from "socket.io-client";
 import { Button } from "../../components/ui/button";
 import { useAuth } from "../../context/AuthContext";
-import { Link,  useSearchParams } from "react-router-dom";
+import toast from "react-hot-toast";
+import { Link, useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../../config";
 import ConfirmationModal from "../../components/ui/confirmation-modal";
 import { useDebounce } from "../../hooks/useDebounce";
-
 import { generateCertificate } from "../../utils/generateCertificate";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -24,48 +25,43 @@ const CATEGORIES = ["Tech", "Sports", "Cultural", "Workshop", "Music", "Other"];
 
 export default function CustomerDashboard() {
   const { user } = useAuth();
-
+  const [searchParams, setSearchParams] = useSearchParams();
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("Upcoming Tickets");
-
   const [selectedTicket, setSelectedTicket] = useState(null);
-
+  const [availableEvents, setAvailableEvents] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedRegistrationId, setSelectedRegistrationId] = useState(null);
+  const [highlightedEvents, setHighlightedEvents] = useState({});
+  const [searchQuery, setSearchQuery] = useState(
+    () => searchParams.get("q") || "",
+  );
+  const [selectedCategory, setSelectedCategory] = useState(
+    () => searchParams.get("category") || "",
+  );
+  const [isFetching, setIsFetching] = useState(false);
+  const [savedEvents, setSavedEvents] = useState([]);
   const ticketRef = useRef(null);
   const mountedRef = useRef(true);
-
-  
-
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  const [availableEvents, setAvailableEvents] = useState([]);
-  const [savedEvents, setSavedEvents] = useState([]);
-
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const [selectedRegistrationId, setSelectedRegistrationId] = useState(null);
-
-  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") || "");
-
-  const [selectedCategory, setSelectedCategory] = useState(
-    searchParams.get("category") || "",
-  );
-
-  const [isFetching, setIsFetching] = useState(false);
-
-  useEffect(() => {
-    mountedRef.current = true;
-
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+  const socketRef = useRef(null);
+  const joinedEventIdsRef = useRef([]);
+  const highlightTimeoutsRef = useRef({});
 
   const debouncedSearch = useDebounce(searchQuery, 400);
+  const availableEventIds = useMemo(
+    () => availableEvents.map((evt) => evt?._id).filter(Boolean),
+    [availableEvents],
+  );
 
-  // Fetch saved events
   useEffect(() => {
-    fetchSavedEvents();
+    return () => {
+      mountedRef.current = false;
+      Object.values(highlightTimeoutsRef.current).forEach((timeoutId) => {
+        clearTimeout(timeoutId);
+      });
+      highlightTimeoutsRef.current = {};
+    };
   }, []);
 
   useEffect(() => {
@@ -90,24 +86,19 @@ export default function CustomerDashboard() {
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-      // eslint-disable-next-line
-  }, [debouncedSearch, selectedCategory, activeTab]);
+  }, [
+    activeTab,
+    debouncedSearch,
+    searchParams,
+    selectedCategory,
+    setSearchParams,
+  ]);
 
-  useEffect(() => {
-    if (activeTab === "Browse Events") {
-      fetchAvailableEvents();
-    } else {
-      fetchRegistrations();
-    }
-      // eslint-disable-next-line
-  }, [activeTab, searchParams.toString()]);
-
-  const fetchAvailableEvents = async () => {
+  const fetchAvailableEvents = useCallback(async () => {
     try {
       setIsFetching(true);
 
       const params = new URLSearchParams();
-
       params.set("status", "approved");
       params.set("page", searchParams.get("page") || "1");
       params.set("limit", "12");
@@ -119,7 +110,6 @@ export default function CustomerDashboard() {
       if (category) params.set("category", category);
 
       const url = `${API_BASE_URL}/api/events?${params.toString()}`;
-
       const res = await fetch(url);
 
       if (!res.ok) {
@@ -127,21 +117,24 @@ export default function CustomerDashboard() {
       }
 
       const data = await res.json();
-
       const upcoming = (data.events || []).filter(
         (evt) => new Date(evt.date) >= new Date(),
       );
 
-      setAvailableEvents(upcoming);
+      if (mountedRef.current) {
+        setAvailableEvents(upcoming);
+      }
     } catch (error) {
       console.error("Failed to fetch events:", error);
     } finally {
-      setIsFetching(false);
-      setLoading(false);
+      if (mountedRef.current) {
+        setIsFetching(false);
+        setLoading(false);
+      }
     }
-  };
+  }, [searchParams]);
 
-  const fetchSavedEvents = async () => {
+  const fetchSavedEvents = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
 
@@ -158,35 +151,149 @@ export default function CustomerDashboard() {
     } catch (error) {
       console.error("Failed to fetch saved events", error);
     }
-  };
+  }, []);
 
-  const fetchRegistrations = async () => {
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchSavedEvents();
+  }, [fetchSavedEvents]);
+
+  const fetchRegistrations = useCallback(async () => {
     try {
-      setLoading(true);
-
+      if (mountedRef.current) setLoading(true);
       const token = localStorage.getItem("token");
-
       const res = await fetch(`${API_BASE_URL}/api/registrations/me`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (res.ok) {
+      if (res.ok && mountedRef.current) {
         const data = await res.json();
         setRegistrations(data.registrations || []);
       }
     } catch (error) {
       console.error("Failed to fetch registrations", error);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "Browse Events") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchAvailableEvents();
+    } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchRegistrations();
+    }
+  }, [activeTab, fetchAvailableEvents, fetchRegistrations]);
+
+  useEffect(() => {
+    if (activeTab !== "Browse Events" || availableEventIds.length === 0) {
+      return undefined;
+    }
+
+    const socket = io(API_BASE_URL, {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+    });
+
+    socketRef.current = socket;
+
+    const eventIds = availableEventIds;
+
+    joinedEventIdsRef.current = eventIds;
+
+    const pulseEvent = (eventId) => {
+      setHighlightedEvents((prev) => ({
+        ...prev,
+        [eventId]: true,
+      }));
+
+      if (highlightTimeoutsRef.current[eventId]) {
+        clearTimeout(highlightTimeoutsRef.current[eventId]);
+      }
+
+      highlightTimeoutsRef.current[eventId] = window.setTimeout(() => {
+        setHighlightedEvents((prev) => {
+          const next = { ...prev };
+          delete next[eventId];
+          return next;
+        });
+        delete highlightTimeoutsRef.current[eventId];
+      }, 1800);
+    };
+
+    const joinRooms = () => {
+      eventIds.forEach((eventId) => {
+        socket.emit("event:join", { eventId });
+      });
+    };
+
+    const handleRegistrationCount = ({ eventId, count } = {}) => {
+      if (!eventId || typeof count !== "number") {
+        return;
+      }
+
+      setAvailableEvents((prev) => {
+        let changed = false;
+
+        const next = prev.map((evt) => {
+          if (evt._id !== eventId) {
+            return evt;
+          }
+
+          if (evt.registeredCount === count) {
+            return evt;
+          }
+
+          changed = true;
+
+          return {
+            ...evt,
+            registeredCount: count,
+          };
+        });
+
+        if (changed) {
+          pulseEvent(eventId);
+        }
+
+        return next;
+      });
+    };
+
+    socket.on("connect", joinRooms);
+    socket.on("registration:count", handleRegistrationCount);
+    socket.on("connect_error", () => {});
+
+    if (socket.connected) {
+      joinRooms();
+    }
+
+    return () => {
+      const joinedEventIds = joinedEventIdsRef.current;
+
+      joinedEventIds.forEach((eventId) => {
+        socket.emit("event:leave", { eventId });
+      });
+
+      socket.off("connect", joinRooms);
+      socket.off("registration:count", handleRegistrationCount);
+      socket.off("connect_error");
+      socket.disconnect();
+      socketRef.current = null;
+      joinedEventIdsRef.current = [];
+
+      Object.values(highlightTimeoutsRef.current).forEach((timeoutId) => {
+        clearTimeout(timeoutId);
+      });
+      highlightTimeoutsRef.current = {};
+    };
+  }, [activeTab, availableEventIds]);
 
   const handleRegister = async (eventId) => {
     try {
       const token = localStorage.getItem("token");
-
       const res = await fetch(
         `${API_BASE_URL}/api/registrations/${eventId}/register`,
         {
@@ -198,16 +305,18 @@ export default function CustomerDashboard() {
         },
       );
 
+      const data = await res.json();
+
       if (res.ok) {
-        alert("Successfully registered!");
+        toast.success(data.message || "Successfully registered!");
         setActiveTab("Upcoming Tickets");
+        fetchRegistrations();
       } else {
-        const data = await res.json();
-        alert(data.message || "Registration failed");
+        toast.error(data.message || "Registration failed");
       }
     } catch (error) {
       console.error("Registration failed", error);
-      alert("Something went wrong");
+      toast.error("Something went wrong");
     }
   };
 
@@ -246,14 +355,13 @@ export default function CustomerDashboard() {
       await fetchSavedEvents();
     } catch (error) {
       console.error("Failed to update saved events", error);
-      alert("Something went wrong");
+      toast.error("Something went wrong");
     }
   };
 
   const handleCancelRegistration = async () => {
     try {
       const token = localStorage.getItem("token");
-
       const response = await fetch(
         `${API_BASE_URL}/api/registrations/${selectedRegistrationId}/cancel`,
         {
@@ -281,9 +389,10 @@ export default function CustomerDashboard() {
 
       setIsModalOpen(false);
       setSelectedRegistrationId(null);
+      toast.success("Registration cancelled successfully!");
     } catch (error) {
       console.error(error);
-      alert("Something went wrong");
+      toast.error("Something went wrong");
     }
   };
 
@@ -306,24 +415,19 @@ export default function CustomerDashboard() {
       });
 
       const pdfWidth = pdf.internal.pageSize.getWidth();
-
       const imgProps = pdf.getImageProperties(imgData);
-
       const pdfHeight = (imgProps.height * (pdfWidth - 20)) / imgProps.width;
 
       pdf.setFontSize(20);
       pdf.setTextColor(244, 63, 94);
-
       pdf.text("EventOne Ticket", 15, 15);
 
       const maxHeight = 250;
-
       let finalWidth = pdfWidth - 20;
       let finalHeight = pdfHeight;
 
       if (pdfHeight > maxHeight) {
         const scaleFactor = maxHeight / pdfHeight;
-
         finalHeight = maxHeight;
         finalWidth = finalWidth * scaleFactor;
       }
@@ -335,30 +439,25 @@ export default function CustomerDashboard() {
         ?.replace(/[^a-zA-Z0-9-_]/g, "")
         ?.toUpperCase();
 
-      const fileName = `ticket-${safeEventName || "EVENT"}-${selectedTicket._id
-        .slice(-6)
-        .toUpperCase()}.pdf`;
-
+      const fileName = `ticket-${safeEventName || "EVENT"}-${selectedTicket._id.slice(-6).toUpperCase()}.pdf`;
       pdf.save(fileName);
     } catch (error) {
-      console.error("Failed to download ticket", error);
+      console.error("PDF generation failed:", error);
     }
   };
 
-  const upcomingEvents = [];
-  const pastEvents = [
-    {
-      _id: "abc12345678",
-      status: "attended",
-      event: {
-        title: "AI Innovation Summit",
-        description: "A tech conference on AI and innovation.",
-        date: "2025-04-10",
-        location: "Mumbai",
-        category: "Technology",
-      },
-    },
-  ];
+  const upcomingEvents = registrations.filter(
+    (reg) =>
+      reg.event &&
+      reg.status !== "cancelled" &&
+      new Date(reg.event.date) >= new Date(),
+  );
+  const pastEvents = registrations.filter(
+    (reg) =>
+      reg.event &&
+      reg.status !== "cancelled" &&
+      new Date(reg.event.date) < new Date(),
+  );
 
   if (loading) {
     return (
@@ -367,18 +466,15 @@ export default function CustomerDashboard() {
       </div>
     );
   }
-
   return (
     <div className="min-h-screen bg-background text-foreground pt-32 px-4 sm:px-6 lg:px-8 font-sans selection:bg-purple-500/30 relative overflow-hidden">
-      {/* Background gradient */}
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="from-primary/20 via-background to-background absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))]"></div>
-        <div className="bg-primary/5 absolute top-0 left-1/2 -z-10 h-[1000px] w-[1000px] -translate-x-1/2 rounded-full blur-3xl"></div>
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#8882_1px,transparent_1px),linear-gradient(to_bottom,#8882_1px,transparent_1px)] bg-[size:16px_16px] opacity-15"></div>
+        <div className="from-primary/20 via-background to-background absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))]" />
+        <div className="bg-primary/5 absolute top-0 left-1/2 -z-10 h-[1000px] w-[1000px] -translate-x-1/2 rounded-full blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#8882_1px,transparent_1px),linear-gradient(to_bottom,#8882_1px,transparent_1px)] bg-[size:16px_16px] opacity-15" />
       </div>
 
       <div className="max-w-7xl mx-auto relative z-10">
-        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-12">
           <div>
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
@@ -396,7 +492,6 @@ export default function CustomerDashboard() {
           </div>
         </div>
 
-        {/* Navigation Tabs */}
         <div className="mb-8 border-b border-border">
           <div className="flex space-x-8 overflow-x-auto no-scrollbar">
             {[
@@ -425,9 +520,8 @@ export default function CustomerDashboard() {
             ))}
           </div>
         </div>
-        {/* Main Content Area */}
+
         <div className="bg-card/50 backdrop-blur-sm rounded-3xl p-6 md:p-8 min-h-[500px] border border-border shadow-sm">
-          {/* Content Header */}
           <div className="flex justify-between items-center mb-8">
             <h2 className="text-xl font-semibold text-foreground">
               {activeTab === "Upcoming Tickets"
@@ -452,11 +546,14 @@ export default function CustomerDashboard() {
                 {pastEvents.length} Past
               </span>
             )}
+            {activeTab === "Saved Events" && (
+              <span className="px-3 py-1 bg-blue-500/10 text-blue-500 text-xs font-medium rounded-full border border-blue-500/20">
+                {savedEvents.length} Saved
+              </span>
+            )}
           </div>
 
-          {/* Content Body */}
           <AnimatePresence mode="popLayout">
-            {/* ── Upcoming Tickets tab (unchanged) ───────────────────────────── */}
             {activeTab === "Upcoming Tickets" && (
               <div className="space-y-6">
                 {upcomingEvents.length === 0 ? (
@@ -588,7 +685,6 @@ export default function CustomerDashboard() {
               </div>
             )}
 
-            {/* ── Past Events tab (unchanged) ────────────────────────────────── */}
             {activeTab === "Past Events" && (
               <div className="space-y-6">
                 {pastEvents.length === 0 ? (
@@ -688,10 +784,8 @@ export default function CustomerDashboard() {
               </div>
             )}
 
-            {/* ── Browse Events tab (NEW: search + category pills + loading + empty state) */}
             {activeTab === "Browse Events" && (
               <div className="space-y-6">
-                {/* Search input with clear button */}
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                   <input
@@ -711,7 +805,6 @@ export default function CustomerDashboard() {
                   )}
                 </div>
 
-                {/* Category filter pills — active one is highlighted */}
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => setSelectedCategory("")}
@@ -740,14 +833,12 @@ export default function CustomerDashboard() {
                   ))}
                 </div>
 
-                {/* Subtle loading spinner during debounce + fetch */}
                 {isFetching && (
                   <div className="flex justify-center py-6">
                     <div className="w-6 h-6 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
                   </div>
                 )}
 
-                {/* Empty state with Clear Filters button */}
                 {!isFetching && availableEvents.length === 0 && (
                   <motion.div
                     initial={{ opacity: 0 }}
@@ -775,7 +866,6 @@ export default function CustomerDashboard() {
                   </motion.div>
                 )}
 
-                {/* Event cards grid (unchanged structure) */}
                 {!isFetching && availableEvents.length > 0 && (
                   <div className="grid grid-cols-1 gap-6">
                     {availableEvents.map((evt, idx) => {
@@ -783,6 +873,8 @@ export default function CustomerDashboard() {
                         (r) =>
                           r.status === "registered" && r.event?._id === evt._id,
                       );
+                      const registeredCount = evt.registeredCount ?? 0;
+                      const isHighlighted = !!highlightedEvents[evt._id];
                       const isEventFullBooked =
                         evt.registeredCount === evt.capacity;
 
@@ -791,9 +883,24 @@ export default function CustomerDashboard() {
                           key={evt._id}
                           layout
                           initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
+                          animate={{
+                            opacity: 1,
+                            y: 0,
+                            scale: isHighlighted ? [1, 1.01, 1] : 1,
+                            boxShadow: isHighlighted
+                              ? [
+                                  "0 0 0 rgba(34, 197, 94, 0)",
+                                  "0 0 0 1px rgba(34, 197, 94, 0.35), 0 0 28px rgba(34, 197, 94, 0.12)",
+                                  "0 0 0 rgba(34, 197, 94, 0)",
+                                ]
+                              : "0 0 0 rgba(34, 197, 94, 0)",
+                          }}
                           transition={{ delay: idx * 0.05 }}
-                          className="group relative bg-card border border-border rounded-2xl p-4 hover:border-rose-500/50 transition-colors shadow-sm"
+                          className={`group relative bg-card border rounded-2xl p-4 transition-colors shadow-sm ${
+                            isHighlighted
+                              ? "border-green-500/50"
+                              : "border-border hover:border-rose-500/50"
+                          }`}
                         >
                           <div className="flex flex-col md:flex-row gap-6">
                             <div className="w-full md:w-56 h-36 rounded-xl overflow-hidden shrink-0 bg-muted relative">
@@ -813,7 +920,6 @@ export default function CustomerDashboard() {
                                 {evt.category}
                               </span>
                             </div>
-
                             <div className="flex-1 flex flex-col justify-between">
                               <div>
                                 <div className="flex justify-between items-start">
@@ -846,6 +952,19 @@ export default function CustomerDashboard() {
                                         : "Open"}
                                     </span>
                                   </div>
+                                  <span
+                                    className={`inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full border transition-colors ${
+                                      isHighlighted
+                                        ? "bg-green-500/10 text-green-600 border-green-500/30"
+                                        : "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                                    }`}
+                                  >
+                                    <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                                    <span>
+                                      {registeredCount} registered
+                                      {evt.capacity ? ` / ${evt.capacity}` : ""}
+                                    </span>
+                                  </span>
                                 </div>
                                 <p className="text-muted-foreground text-sm mt-2 line-clamp-2 max-w-2xl">
                                   {evt.description}
@@ -998,7 +1117,6 @@ export default function CustomerDashboard() {
         </div>
       </div>
 
-      {/* Ticket Details Modal (unchanged) */}
       <AnimatePresence>
         {selectedTicket && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
