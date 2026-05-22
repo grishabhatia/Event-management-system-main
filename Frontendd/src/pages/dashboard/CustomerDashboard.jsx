@@ -285,15 +285,47 @@ export default function CustomerDashboard() {
 
   const handleCancelRegistration = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `${API_BASE_URL}/api/registrations/${selectedRegistrationId}/cancel`,
-        {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+        const token = localStorage.getItem('token');
+        const response = await fetch(
+            `${API_BASE_URL}/api/registrations/${selectedRegistrationId}/cancel`,
+            {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+            }
+        );
+
+
+
+            // Update UI instantly
+            setRegistrations((prev) =>
+                prev.map((reg) =>
+                    reg._id === selectedRegistrationId
+                        ?
+                        // console.log(reg._id)
+                        {
+                            ...reg,
+                            status: "cancelled",
+                        }
+                        : reg
+                )
+            );
+
+            setIsModalOpen(false);
+            setSelectedRegistrationId(null);
+            console.log("Cancelled")
+
+        } catch (error) {
+            console.error(error);
+            alert('Something went wrong');
+        }
+    };
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || "Failed to cancel registration");
         }
       );
 
@@ -303,6 +335,45 @@ export default function CustomerDashboard() {
         throw new Error(data.message || 'Failed to cancel registration');
       }
 
+    const fetchRefundPolicy = async (registrationId) => {
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(
+                `${API_BASE_URL}/api/registrations/${registrationId}/refund-policy`,
+                {
+                    method: "GET",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type":
+                            "application/json",
+                    },
+                }
+            );
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error(
+                    data.message ||
+                    "Failed to fetch refund policy"
+                );
+            }
+
+            setRefundInfo(data);
+
+        } catch (error) {
+            console.error(
+                "Failed to fetch refund policy:",
+                error
+            );
+
+            return null;
+        }
+    };
+
+    // Filter registrations based on date
+    const upcomingEvents = registrations.filter(reg => reg.event && new Date(reg.event.date) >= new Date());
+    const pastEvents = registrations.filter(reg => reg.event && new Date(reg.event.date) < new Date());
       setRegistrations((prev) =>
         prev.map((reg) =>
           reg._id === selectedRegistrationId
@@ -628,6 +699,43 @@ export default function CustomerDashboard() {
                                 {reg.status === 'attended' ? 'Attended' : 'Completed'}
                               </span>
                             </div>
+
+                {/* Main Content Area */}
+                <div className="bg-card/50 backdrop-blur-sm rounded-3xl p-6 md:p-8 min-h-[500px] border border-border shadow-sm">
+                    {/* Content Header based on Tab */}
+                    <div className="flex justify-between items-center mb-8">
+                        <h2 className="text-xl font-semibold text-foreground">
+                            {activeTab === 'Upcoming Tickets' ? 'Your Upcoming Tickets' : 'Event History'}
+                        </h2>
+                        {activeTab === 'Upcoming Tickets' && (
+                            <span className="px-3 py-1 bg-rose-500/10 text-rose-500 text-xs font-medium rounded-full border border-rose-500/20">
+                                {upcomingEvents.filter(event => event.status != "cancelled").length} Active
+                            </span>
+                        )}
+                        {activeTab === 'Past Events' && (
+                            <span className="px-3 py-1 bg-purple-500/10 text-purple-500 text-xs font-medium rounded-full border border-purple-500/20">
+                                {pastEvents.length} Past
+                            </span>
+                        )}
+                    </div>
+
+                    {/* Content Body */}
+                    <AnimatePresence mode="popLayout">
+                        {activeTab === 'Upcoming Tickets' && (
+                            <div className="space-y-6">
+                                {upcomingEvents.length === 0 ? (
+                                    <motion.div
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        className="w-full h-80 border border-dashed border-border rounded-2xl flex flex-col items-center justify-center text-center p-6"
+                            {/* Category filter pills — active one is highlighted */}
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => setSelectedCategory('')}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${selectedCategory === ''
+                                        ? 'bg-rose-500 text-white border-rose-500'
+                                        : 'bg-muted/50 text-muted-foreground border-border hover:border-rose-500/50'
+                                        }`}
                             <p className="text-muted-foreground text-xs mt-1">
                               {reg.event?.date ? new Date(reg.event.date).toLocaleDateString() : 'TBA'} • {reg.event?.location}
                             </p>
@@ -680,6 +788,256 @@ export default function CustomerDashboard() {
                   )}
                 </div>
 
+                            {/* Event cards grid (unchanged structure) */}
+                            {!isFetching && availableEvents.length > 0 && (
+                                <div className="grid grid-cols-1 gap-6">
+                                    {availableEvents.map((evt, idx) => {
+                                        const isRegistered = registrations.some(
+                                            r => r.status === "registered" && r.event?._id === evt._id
+                                        );
+                                        const isEventFullBooked = evt.registeredCount === evt.capacity;
+
+                                        return (
+                                            <motion.div
+                                                key={evt._id}
+                                                layout
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ delay: idx * 0.05 }}
+                                                className="group relative bg-card border border-border rounded-2xl p-4 hover:border-rose-500/50 transition-colors shadow-sm"
+                                            >
+                                                <div className="flex flex-col md:flex-row gap-6">
+                                                    <div className="w-full md:w-56 h-36 rounded-xl overflow-hidden shrink-0 bg-muted relative">
+                                                        {evt.posterUrl ? (
+                                                            <img
+                                                                src={evt.posterUrl}
+                                                                alt={evt.title}
+                                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                            />
+                                                        ) : (
+                                                            <div className="flex items-center justify-center h-full text-muted-foreground">
+                                                                <Calendar className="w-8 h-8" />
+                                                            </div>
+                                                        )}
+                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                                                        <span className="absolute bottom-2 left-2 text-xs text-white/90 font-medium px-2 py-0.5 bg-black/40 backdrop-blur-sm rounded">
+                                                            {evt.category}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="flex-1 flex flex-col justify-between">
+                                                        <div>
+                                                            <div className="flex justify-between items-start">
+                                                                <h3 className="text-lg font-semibold text-foreground group-hover:text-rose-500 transition-colors">
+                                                                    {evt.title}
+                                                                </h3>
+                                                                <span className="inline-flex items-center text-xs px-2 py-1 rounded-full border bg-blue-500/10 text-blue-500 border-blue-500/20">
+                                                                    {evt.capacity ? `${evt.capacity} Spots` : 'Open'}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-muted-foreground text-sm mt-2 line-clamp-2 max-w-2xl">
+                                                                {evt.description}
+                                                            </p>
+                                                            <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
+                                                                <span className="flex items-center">
+                                                                    <Calendar className="w-3 h-3 mr-1.5" />
+                                                                    {new Date(evt.date).toLocaleDateString()}
+                                                                </span>
+                                                                <span className="flex items-center">
+                                                                    <MapPin className="w-3 h-3 mr-1.5" />
+                                                                    {evt.location}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex justify-between pt-4 md:pt-0 gap-2">
+
+
+                                                            {/* Cancel Registration */}
+                                                            {
+                                                                reg.status === "cancelled" ? (
+                                                                    // After cancellation, show refund status in the Customer Dashboard: 'Refund Initiated', 'Refunded'
+                                                                    // Refund timeline: ''Refund of ₹X initiated — typically takes 5-7 business days''
+
+                                                                    reg.refundStatus == "pending" ? (
+                                                                        <p className='text-sm text-yellow-500 font-bold'>Refund of ₹{reg.refundAmount} initiated — typically takes 5-7 business days</p>
+
+                                                                    ) : (
+                                                                        reg.refundStatus == "processed" ? (<p className='text-sm text-green-500 font-bold'>Amount Refunded of ₹{reg.refundAmount}</p>
+                                                                        ) : (null)
+                                                                    )
+
+                                                                ) : (
+                                                                    <>
+                                                                        <Button
+                                                                            variant="outline"
+                                                                            className="text-xs h-8 border-rose-500/30 text-rose-500 hover:bg-rose-500/10"
+                                                                            onClick={() => setSelectedTicket(reg)}
+                                                                        >
+                                                                            View Details
+                                                                        </Button>
+                                                                        <Button
+                                                                            variant="outline"
+                                                                            className="text-xs h-8 bg-rose-600 border-rose-500/30 text-white hover:bg-red-400"
+                                                                            onClick={async () => {
+                                                                                setSelectedRegistrationId(
+                                                                                    reg._id
+                                                                                );
+                                                                                await fetchRefundPolicy(reg._id);
+                                                                                setIsModalOpen(true);
+
+                                                                            }}
+                                                                        >
+                                                                            Cancel Registration
+                                                                        </Button>
+                                                                    </>
+
+                                                                )
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'Past Events' && (
+                            <div className="space-y-6">
+                                {pastEvents.length === 0 ? (
+                                    <motion.div
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        className="w-full h-80 border border-dashed border-border rounded-2xl flex flex-col items-center justify-center text-center p-6"
+                                    >
+                                        <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
+                                            <Calendar className="w-8 h-8 text-muted-foreground" />
+                                        </div>
+                                        <h3 className="text-lg font-medium text-foreground">No past events</h3>
+                                        <p className="text-muted-foreground mt-2 max-w-sm">
+                                            You haven't attended any past events yet.
+                                        </p>
+                                    </motion.div>
+                                ) : (
+                                    <div className="grid grid-cols-1 gap-6">
+                                        {pastEvents.map((reg, idx) => (
+                                            <motion.div
+                                                key={reg._id}
+                                                layout
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, scale: 0.95 }}
+                                                transition={{ delay: idx * 0.05 }}
+                                                className="group relative bg-card/60 border border-border rounded-2xl p-4 transition-colors shadow-sm opacity-75 hover:opacity-100"
+                                            >
+                                                <div className="flex flex-col md:flex-row gap-6">
+                                                    <div className="w-full md:w-40 h-24 rounded-xl overflow-hidden shrink-0 bg-muted grayscale group-hover:grayscale-0 transition-all">
+                                                        {reg.event?.posterUrl ? (
+                                                            <img
+                                                                src={reg.event.posterUrl}
+                                                                alt={reg.event.title}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            <div className="flex items-center justify-center h-full text-muted-foreground">
+                                                                <Calendar className="w-6 h-6" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="flex-1 flex flex-col justify-center">
+                                                        <div className="flex justify-between items-start">
+                                                            <h3 className="text-base font-semibold text-foreground">
+                                                                {reg.event?.title}
+                                                            </h3>
+                                                            <span className={`inline-flex items-center text-xs px-2 py-1 rounded-full border ${reg.status === 'attended'
+                                                                ? 'bg-purple-500/10 text-purple-500 border-purple-500/20'
+                                                                : 'bg-secondary text-muted-foreground'
+                                                                }`}>
+                                                                {reg.status === 'attended' ? 'Attended' : 'Completed'}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-muted-foreground text-xs mt-1">
+                                                            {reg.event?.date ? new Date(reg.event.date).toLocaleDateString() : 'TBA'} • {reg.event?.location}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'Browse Events' && (
+                            <div className="space-y-6">
+                                {availableEvents.length === 0 ? (
+                                    <motion.div
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        className="w-full h-80 border border-dashed border-border rounded-2xl flex flex-col items-center justify-center text-center p-6"
+                                    >
+                                        <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
+                                            <Calendar className="w-8 h-8 text-muted-foreground" />
+                                        </div>
+                                        <h3 className="text-lg font-medium text-foreground">No upcoming events found</h3>
+                                        <p className="text-muted-foreground mt-2 max-w-sm">
+                                            Check back later for new events!
+                                        </p>
+                                    </motion.div>
+                                ) : (
+                                    <div className="grid grid-cols-1 gap-6">
+                                        {availableEvents.map((evt, idx) => {
+                                            const isRegistered = registrations.some(r => r.status === "registered" && r.event?._id === evt._id);
+                                            return (
+                                                <motion.div
+                                                    key={evt._id}
+                                                    layout
+                                                    initial={{ opacity: 0, y: 10 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    transition={{ delay: idx * 0.05 }}
+                                                    className="group relative bg-card border border-border rounded-2xl p-4 hover:border-rose-500/50 transition-colors shadow-sm"
+                                                >
+                                                    <div className="flex flex-col md:flex-row gap-6">
+                                                        <div className="w-full md:w-56 h-36 rounded-xl overflow-hidden shrink-0 bg-muted relative">
+                                                            {evt.posterUrl ? (
+                                                                <img
+                                                                    src={evt.posterUrl}
+                                                                    alt={evt.title}
+                                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                                />
+                                                        <div className="flex justify-end pt-4 md:pt-0">
+                                                            {isRegistered ? (
+                                                                <Button disabled variant="success" className="text-xs h-8 bg-green-600 text-white opacity-75">
+                                                                    Registered
+                                                                </Button>
+                                                            ) : isEventFullBooked ? (
+                                                                <Button disabled variant="secondary" className="text-xs h-8">
+                                                                    Fully Booked
+                                                                </Button>
+                                                            ) : (
+                                                                <Button
+                                                                    className="text-xs h-8 bg-rose-600 hover:bg-rose-700 text-white"
+                                                                    onClick={() => handleRegister(evt._id)}
+                                                                >
+                                                                    Register Now
+                                                                </Button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </AnimatePresence>
+            </div>
+        </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => setSelectedCategory('')}
@@ -845,6 +1203,38 @@ export default function CustomerDashboard() {
                                 )}
                               </div>
                             </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            <ConfirmationModal
+                isOpen={isModalOpen}
+                onClose={() => {
+                    setIsModalOpen(false);
+                    setSelectedRegistrationId(null);
+                    setRefundInfo(null)
+                }}
+                refundInfo={refundInfo}
+                onConfirm={handleCancelRegistration}
+                title="Cancel Registration"
+            // message="Are you sure you want to cancel your registration? This action cannot be undone."
+            />
+        </div>
+
+
+    );
+                            <Button onClick={handleDownloadTicket} className="w-full bg-rose-600 hover:bg-rose-700 text-white">
+                                <Download className="w-4 h-4 mr-2" />
+                                Download / Print Ticket
+                            </Button>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
+        </AnimatePresence>
+
+      
                           </div>
                         </motion.div>
                       );
