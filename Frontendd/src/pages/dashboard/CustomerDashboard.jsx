@@ -1,3 +1,23 @@
+"use client";
+
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+} from "react";
+
+import { Calendar, MapPin, Ticket } from "lucide-react";
+import { Button } from "../../components/ui/button";
+import { useAuth } from "../../context/AuthContext";
+import { Link, useSearchParams } from "react-router-dom";
+import { API_BASE_URL } from "../../config";
+import ConfirmationModal from "../../components/ui/confirmation-modal";
+
+import CountdownTimer from "../../components/CountdownTimer";
+
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, MapPin, Ticket, X, Download, Search } from 'lucide-react';
@@ -16,6 +36,68 @@ const CATEGORIES = ['Tech', 'Sports', 'Cultural', 'Workshop', 'Music', 'Other'];
 
 export default function CustomerDashboard() {
   const { user } = useAuth();
+
+  const [registrations, setRegistrations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [activeTab, setActiveTab] = useState("Upcoming Tickets");
+  const [selectedTicket, setSelectedTicket] = useState(null);
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedRegistrationId, setSelectedRegistrationId] = useState(null);
+
+  const [searchParams] = useSearchParams();
+
+  const ticketRefs = useRef({});
+  const mountedRef = useRef(true);
+
+  // =========================
+  // Fetch Registrations
+  // =========================
+  const fetchRegistrations = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const token = localStorage.getItem("token");
+
+      const res = await fetch(
+        `${API_BASE_URL}/api/registrations/me`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (res.ok && mountedRef.current) {
+const { user } = useAuth();
+const [registrations, setRegistrations] = useState([]);
+const [loading, setLoading] = useState(true);
+const [activeTab, setActiveTab] = useState('Upcoming Tickets');
+const [selectedTicket, setSelectedTicket] = useState(null);
+const ticketRef = useRef(null);
+const mountedRef = useRef(true);
+const navigate = useNavigate();
+
+const [searchParams, setSearchParams] = useSearchParams();
+
+const [availableEvents, setAvailableEvents] = useState([]);
+const [isModalOpen, setIsModalOpen] = useState(false);
+const [selectedRegistrationId, setSelectedRegistrationId] = useState(null);
+
+const [searchQuery, setSearchQuery] = useState(
+    searchParams.get('q') || ''
+);
+
+const [selectedCategory, setSelectedCategory] = useState(
+    searchParams.get('category') || ''
+);
+const [isFetching, setIsFetching] = useState(false);  
+useEffect(() => () => (mountedRef.current = false), []);
+//  debounced value — API only fires 400ms after user stops typing 
+const debouncedSearch = useDebounce(searchQuery, 400);
+
+useEffect(() => {
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('Upcoming Tickets');
@@ -113,6 +195,84 @@ export default function CustomerDashboard() {
     } catch (error) {
       console.error('Failed to fetch events:', error);
     } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // =========================
+  // Fetch Events (optional tab)
+  // =========================
+  const fetchAvailableEvents = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const tags = searchParams.get("tags");
+
+      let url = `${API_BASE_URL}/api/events?status=approved`;
+      if (tags) url += `&tags=${tags}`;
+
+      const res = await fetch(url);
+
+      if (res.ok) {
+        const data = await res.json();
+
+        const upcoming = (data.events || []).filter(
+          (evt) => new Date(evt.date) >= new Date()
+        );
+
+        setRegistrations(upcoming);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [searchParams]);
+
+  // =========================
+  // useEffect
+  // =========================
+  useEffect(() => {
+  const loadData = async () => {
+    if (activeTab === "Browse Events") {
+      await fetchAvailableEvents();
+    } else {
+      await fetchRegistrations();
+    }
+  };
+
+  loadData();
+}, [activeTab, fetchAvailableEvents, fetchRegistrations]);
+
+  // =========================
+  // Register
+  // =========================
+  const handleRegister = async (eventId) => {
+    try {
+      const token = localStorage.getItem("token");
+
+      const res = await fetch(
+        `${API_BASE_URL}/api/registrations/${eventId}/register`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await res.json();
+
+      if (res.ok) {
+        alert(data.message || "Registered successfully");
+        setActiveTab("Upcoming Tickets");
+        fetchRegistrations();
+      } else {
+        alert(data.message || "Registration failed");
+      }
+    } catch (err) {
+      console.error(err);
       if (mountedRef.current) {
         setIsFetching(false);
         setLoading(false);
@@ -283,6 +443,38 @@ export default function CustomerDashboard() {
     }
   };
 
+  // =========================
+  // Cancel Registration
+  // =========================
+  const handleCancelRegistration = async () => {
+    try {
+      const token = localStorage.getItem("token");
+
+      const res = await fetch(
+        `${API_BASE_URL}/api/registrations/${selectedRegistrationId}/cancel`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (res.ok) {
+        setRegistrations((prev) =>
+          prev.map((r) =>
+            r._id === selectedRegistrationId
+              ? { ...r, status: "cancelled" }
+              : r
+          )
+        );
+      }
+
+      setIsModalOpen(false);
+      setSelectedRegistrationId(null);
+    } catch (err) {
+      console.error(err);
+const handleCancelRegistration = async () => {
   const handleCancelRegistration = async () => {
     try {
         const token = localStorage.getItem('token');
@@ -391,6 +583,51 @@ export default function CustomerDashboard() {
     }
   };
 
+  // =========================
+  // Download Ticket
+  // =========================
+  const handleDownloadTicket = async (ticket) => {
+    try {
+      const el = ticketRefs.current[ticket._id];
+      if (!el) return;
+
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#fff",
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+
+      const pdf = new jsPDF("portrait", "mm", "a4");
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const imgProps = pdf.getImageProperties(imgData);
+
+      const pdfHeight =
+        (imgProps.height * (pdfWidth - 20)) / imgProps.width;
+
+      pdf.text("Event Ticket", 15, 15);
+
+      pdf.addImage(
+        imgData,
+        "PNG",
+        10,
+        25,
+        pdfWidth - 20,
+        pdfHeight
+      );
+
+      const safeName = ticket.event?.title
+        ?.replace(/\s+/g, "-")
+        ?.replace(/[^a-zA-Z0-9-_]/g, "");
+
+      pdf.save(
+        `ticket-${safeName || "EVENT"}-${ticket._id.slice(-6)}.pdf`
+      );
+    } catch (err) {
+      console.error(err);
+const handleDownloadTicket = async () => {
   const handleDownloadTicket = async () => {
     try {
       if (!ticketRef.current || !selectedTicket) return;
@@ -439,6 +676,41 @@ export default function CustomerDashboard() {
     } catch (error) {
       console.error('PDF generation failed:', error);
     }
+};
+
+  // =========================
+  // Filters
+  // =========================
+  const upcomingEvents = registrations.filter(
+    (reg) =>
+      reg.event &&
+      reg.status !== "cancelled" &&
+      new Date(reg.event.date) >= new Date()
+  );
+
+  // =========================
+  // Loading
+  // =========================
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-8 h-8 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+// Hardcoded for now (same as original)
+const upcomingEvents = [];
+const pastEvents = [
+    {
+        _id: "abc12345678",
+        status: "attended",
+        event: {
+            title: "AI Innovation Summit",
+            description: "A tech conference on AI and innovation.",
+            date: "2025-04-10",
+            location: "Mumbai",
+            category: "Technology",
+        },
+    },
+];
   };
 
   const upcomingEvents = registrations.filter(
@@ -456,6 +728,130 @@ export default function CustomerDashboard() {
     );
   }
 
+  // =========================
+  // UI
+  // =========================
+  return (
+    <div className="min-h-screen pt-32 px-4">
+      <div className="max-w-7xl mx-auto">
+
+        {/* Header */}
+        <div className="mb-10">
+          <h1 className="text-3xl font-bold">
+            Welcome, {user?.name || "User"}
+          </h1>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-6 border-b mb-8">
+          {["Upcoming Tickets", "Past Events", "Browse Events"].map(
+            (tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`pb-2 ${
+                  activeTab === tab
+                    ? "text-orange-500 border-b-2 border-orange-500"
+                    : "text-gray-400"
+                }`}
+              >
+                {tab}
+              </button>
+            )
+          )}
+        </div>
+
+        {/* Tickets */}
+        {activeTab === "Upcoming Tickets" && (
+          <div className="space-y-6">
+            {upcomingEvents.length === 0 ? (
+              <div className="text-center py-20">
+                <Ticket className="mx-auto w-10 h-10" />
+                <p className="mt-4">No tickets found</p>
+
+                <Button asChild className="mt-4">
+                  <Link to="/#events">Browse Events</Link>
+                </Button>
+              </div>
+            ) : (
+              upcomingEvents.map((reg) => (
+                <div
+                  key={reg._id}
+                  className="border rounded-xl p-4"
+                >
+                  {/* Ticket */}
+                  <div
+                    ref={(el) =>
+                      (ticketRefs.current[reg._id] = el)
+                    }
+                    className="flex gap-4"
+                  >
+                    <div className="w-40 h-28 bg-gray-200 rounded" />
+
+                    <div>
+                      <h3 className="font-semibold">
+                        {reg.event?.title}
+                      </h3>
+
+                      <p className="text-sm text-gray-500">
+                        {reg.event?.description}
+                      </p>
+
+                      <p className="text-xs mt-2">
+                        <Calendar className="inline w-3 h-3" />{" "}
+                        {new Date(
+                          reg.event?.date
+                        ).toLocaleDateString()}
+                      </p>
+
+                      {/* Countdown Timer */}
+                      <div className="mt-2">
+                        <CountdownTimer
+                          eventDate={reg.event?.date}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-2 mt-4">
+                    <Button
+                      onClick={() =>
+                        handleDownloadTicket(reg)
+                      }
+                    >
+                      Download
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedRegistrationId(reg._id);
+                        setIsModalOpen(true);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* Modal */}
+        <ConfirmationModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onConfirm={handleCancelRegistration}
+          title="Cancel Registration"
+          description="Are you sure?"
+        />
+      </div>
+    </div>
+  );
+}
+return (
   return (
     <div className="min-h-screen bg-background text-foreground pt-32 px-4 sm:px-6 lg:px-8 font-sans selection:bg-purple-500/30 relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
