@@ -137,7 +137,7 @@ const handleRegister = async (eventId) => {
         setActiveTab('Upcoming Tickets');
         fetchRegistrations();
       } else {
-        alert(data.message || 'Registration failed');
+        toast.error(data.message || 'Registration failed');
       }
     } catch (err) {
       console.error(err);
@@ -647,7 +647,6 @@ const handleRegister = async (eventId) => {
                                 {evt.category}
                               </span>
                             </div>
-
                             <div className="flex-1 flex flex-col justify-between">
                               <div>
                                 <div className="flex justify-between items-start">
