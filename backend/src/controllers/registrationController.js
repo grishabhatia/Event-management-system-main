@@ -1,7 +1,10 @@
 import Event from '../models/Event.js';
 import Registration from '../models/Registration.js';
+import User from '../models/User.js';
+
 import { generateQRCodeDataUrl } from '../utils/qrcode.js';
 import { sendEmail } from '../utils/email.js';
+
 import path from 'path';
 import { createObjectCsvWriter } from 'csv-writer';
 import { emitRegistrationCount } from '../services/socket.js';
@@ -12,7 +15,9 @@ export const registerForEvent = async (req, res) => {
     const event = await Event.findById(req.params.id);
 
     if (!event || event.status !== 'approved') {
-      return res.status(400).json({ message: 'Event not available' });
+      return res.status(400).json({
+        message: 'Event not available',
+      });
     }
 
     // Check existing registration
@@ -24,21 +29,39 @@ export const registerForEvent = async (req, res) => {
     // Already active
     if (
       existingRegistration &&
-      ['registered', 'waitlisted', 'attended'].includes(existingRegistration.status)
+      ['registered', 'waitlisted', 'attended'].includes(
+        existingRegistration.status
+      )
     ) {
-      return res.status(400).json({ message: 'Already registered or waitlisted' });
+      return res.status(400).json({
+        message: 'Already registered or waitlisted',
+      });
     }
 
-    // Atomically increment registeredCount only if under capacity
+    // Atomically increment count only if under capacity
     const updatedEvent = await Event.findOneAndUpdate(
-      { _id: event._id, status: 'approved', $expr: { $lt: ['$registeredCount', '$capacity'] } },
-      { $inc: { registeredCount: 1 } },
-      { new: true }
+      {
+        _id: event._id,
+        status: 'approved',
+        $expr: {
+          $lt: ['$registeredCount', '$capacity'],
+        },
+      },
+      {
+        $inc: {
+          registeredCount: 1,
+        },
+      },
+      {
+        new: true,
+      }
     );
 
-    // Event is full — reject immediately, no registration created
+    // Event full
     if (!updatedEvent) {
-      return res.status(400).json({ message: 'Event is full' });
+      return res.status(400).json({
+        message: 'Event is full',
+      });
     }
 
     const payload = JSON.stringify({
@@ -46,15 +69,23 @@ export const registerForEvent = async (req, res) => {
       eventId: event._id,
       at: Date.now(),
     });
-    const qrCodeDataUrl = await generateQRCodeDataUrl(payload);
+
+    const qrCodeDataUrl =
+      await generateQRCodeDataUrl(payload);
 
     let registration;
 
     // Reuse cancelled registration
-    if (existingRegistration && existingRegistration.status === 'cancelled') {
+    if (
+      existingRegistration &&
+      existingRegistration.status === 'cancelled'
+    ) {
       existingRegistration.status = 'registered';
-      existingRegistration.qrCodeDataUrl = qrCodeDataUrl;
-      registration = await existingRegistration.save();
+      existingRegistration.qrCodeDataUrl =
+        qrCodeDataUrl;
+
+      registration =
+        await existingRegistration.save();
     } else {
       try {
         registration = await Registration.create({
@@ -65,10 +96,21 @@ export const registerForEvent = async (req, res) => {
         });
       } catch (dupErr) {
         if (dupErr.code === 11000) {
-          // Undo the registeredCount increment
-          await Event.findByIdAndUpdate(event._id, { $inc: { registeredCount: -1 } });
-          return res.status(400).json({ message: 'Already registered or waitlisted' });
+          await Event.findByIdAndUpdate(
+            event._id,
+            {
+              $inc: {
+                registeredCount: -1,
+              },
+            }
+          );
+
+          return res.status(400).json({
+            message:
+              'Already registered or waitlisted',
+          });
         }
+
         throw dupErr;
       }
     }
@@ -92,12 +134,18 @@ export const registerForEvent = async (req, res) => {
     });
   } catch (err) {
     console.error('ERROR:', err);
-    res.status(500).json({ message: err.message });
+
+    res.status(500).json({
+      message: err.message,
+    });
   }
 };
 
-// fetching registrations with waiting position
-export const myRegistrations = async (req, res) => {
+// Fetch registrations with waitlist position
+export const myRegistrations = async (
+  req,
+  res
+) => {
   try {
     const regs = await Registration.find({ user: req.user.id }).populate('event');
 
@@ -181,46 +229,62 @@ export const participantsForEvent = async (req, res) => {
   }
 };
 
+// Get participants for organizer/admin
+export const participantsForEvent =
+  async (req, res) => {
+    try {
+      const regs = await Registration.find({
+        event: req.params.id,
+      }).populate('user', 'name email');
+
+      res.json({
+        participants: regs,
+      });
+    } catch (err) {
+      console.error('ERROR:', err);
+
+      res.status(500).json({
+        message: err.message,
+      });
+    }
+  };
+
 // Secure check-in handler
-export const checkInParticipant = async (req, res) => {
-  try {
-    // Auth context validation
-    if (!req.user) {
-      console.warn('[AUTH] Check-in attempt without auth context');
-      return res.status(401).json({ message: 'Unauthorized: user not authenticated' });
-    }
-    if (!req.user.id || !req.user.role) {
-      console.warn('[AUTH] Check-in attempt with invalid user context', { user: req.user });
-      return res.status(401).json({ message: 'Unauthorized: invalid user context' });
-    }
+export const checkInParticipant =
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          message:
+            'Unauthorized: user not authenticated',
+        });
+      }
 
-    // Request validation
-    if (!req.body || !req.body.userId) {
-      return res.status(400).json({ message: 'Bad Request: userId is required' });
-    }
+      if (!req.body || !req.body.userId) {
+        return res.status(400).json({
+          message:
+            'Bad Request: userId is required',
+        });
+      }
 
-    // Validate status value (defensive)
-    const validStatuses = ['attended', 'cancelled', 'no-show'];
-    const status = (req.body.status || 'attended').toString().trim().toLowerCase();
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({ message: `Invalid status: must be one of ${validStatuses.join(', ')}` });
-    }
+      const validStatuses = [
+        'attended',
+        'cancelled',
+        'no-show',
+      ];
 
-    // Load event and verify ownership for non-admin organizers
-    const event = await Event.findById(req.params.id).select('organizer');
-    if (!event) return res.status(404).json({ message: 'Event not found' });
+      const status = (
+        req.body.status || 'attended'
+      )
+        .toString()
+        .trim()
+        .toLowerCase();
 
-    // Data integrity check
-    if (!event.organizer) {
-      console.error(`[ALERT] Event ${req.params.id} has missing organizer — investigate database integrity`);
-      return res.status(500).json({ message: 'Server error: event data corrupted' });
-    }
-
-    // Admin bypass: admins may check in for any event
-    if (req.user.role !== 'admin' && event.organizer.toString() !== req.user.id) {
-      console.warn(`[SECURITY] Unauthorized check-in attempt by organizer ${req.user.id} for event ${req.params.id}`);
-      return res.status(403).json({ message: 'Forbidden: you are not the organizer of this event' });
-    }
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          message: 'Invalid status',
+        });
+      }
 
     // Perform atomic update
     const registration = await Registration.findOneAndUpdate(
@@ -267,13 +331,9 @@ export const exportParticipantsCsv = async (req, res) => {
   }
 };
 
-export const checkRegistrationStatus = async (req, res) => {
-  try {
-    const registration = await Registration.findOne({
-      user: req.user.id,
-      event: req.params.id,
-      status: { $ne: 'cancelled' },
-    });
+        isWaitlisted:
+          registration?.status ===
+          'waitlisted',
 
     res.json({
       isRegistered: registration?.status === 'registered',
@@ -298,31 +358,38 @@ export const promoteFromWaitlist = async (eventId) => {
     .populate('user')
     .populate('event');
 
-  if (!nextRegistration) return;
+    const payload = JSON.stringify({
+      userId:
+        nextRegistration.user._id,
+      eventId:
+        nextRegistration.event._id,
+      at: Date.now(),
+    });
 
-  const payload = JSON.stringify({
-    userId: nextRegistration.user._id,
-    eventId: nextRegistration.event._id,
-    at: Date.now(),
-  });
+    const qrCodeDataUrl =
+      await generateQRCodeDataUrl(
+        payload
+      );
 
-  const qrCodeDataUrl = await generateQRCodeDataUrl(payload);
+    nextRegistration.status =
+      'registered';
 
-  nextRegistration.status = 'registered';
-  nextRegistration.qrCodeDataUrl = qrCodeDataUrl;
-  await nextRegistration.save();
+    nextRegistration.qrCodeDataUrl =
+      qrCodeDataUrl;
 
-  try {
-    await sendEmail({
-      to: nextRegistration.user.email,
-      subject: `Spot Confirmed: ${nextRegistration.event.title}`,
-      html: `
+    await nextRegistration.save();
+
+    try {
+      await sendEmail({
+        to: nextRegistration.user.email,
+        subject: `Spot Confirmed: ${nextRegistration.event.title}`,
+        html: `
         <p>You have been promoted from the waitlist.</p>
         <p>Your registration for ${nextRegistration.event.title} is now confirmed.</p>
       `,
-    });
-  } catch (_) {}
-};
+      });
+    } catch (_) {}
+  };
 
 export const cancelRegistration = async (req, res) => {
   try {
