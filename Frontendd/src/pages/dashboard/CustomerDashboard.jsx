@@ -1,33 +1,19 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Calendar,
-  MapPin,
-  Ticket,
-  X,
-  Download,
-  Search,
-  Heart,
-} from "lucide-react";
-import { io } from "socket.io-client";
-import { Button } from "../../components/ui/button";
-import { useAuth } from "../../context/AuthContext";
-import toast from "react-hot-toast";
-import { Link, useSearchParams } from "react-router-dom";
-import { API_BASE_URL } from "../../config";
-import ConfirmationModal from "../../components/ui/confirmation-modal";
-import { useDebounce } from "../../hooks/useDebounce";
-import { generateCertificate } from "../../utils/generateCertificate";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Calendar, MapPin, Ticket, X, Download, Search, Heart } from 'lucide-react';
+import { io } from 'socket.io-client';
+import { Button } from '../../components/ui/button';
+import { useAuth } from '../../context/AuthContext';
+import toast from 'react-hot-toast';
+import { Link, useSearchParams } from 'react-router-dom';
+import { API_BASE_URL } from '../../config';
+import ConfirmationModal from '../../components/ui/confirmation-modal';
+import { useDebounce } from '../../hooks/useDebounce';
+import { generateCertificate } from '../../utils/generateCertificate';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
-const CATEGORIES = ["Tech", "Sports", "Cultural", "Workshop", "Music", "Other"];
+const CATEGORIES = ['Tech', 'Sports', 'Cultural', 'Workshop', 'Music', 'Other'];
 
 const getEventDate = (registration) => {
   if (!registration?.event?.date) return null;
@@ -44,20 +30,16 @@ export default function CustomerDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("Upcoming Tickets");
+  const [activeTab, setActiveTab] = useState('Upcoming Tickets');
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [availableEvents, setAvailableEvents] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRegistrationId, setSelectedRegistrationId] = useState(null);
   const [highlightedEvents, setHighlightedEvents] = useState({});
-  const [searchQuery, setSearchQuery] = useState(
-    () => searchParams.get("q") || "",
-  );
-  const [selectedCategory, setSelectedCategory] = useState(
-    () => searchParams.get("category") || "",
-  );
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
+  const [selectedCategory, setSelectedCategory] = useState(() => searchParams.get('category') || '');
   const [isFetching, setIsFetching] = useState(false);
-  const [registrationsError, setRegistrationsError] = useState("");
+  const [registrationsError, setRegistrationsError] = useState('');
   const [savedEvents, setSavedEvents] = useState([]);
 
   const ticketRef = useRef(null);
@@ -189,7 +171,7 @@ export default function CustomerDashboard() {
 
   const fetchRegistrations = useCallback(async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem('token');
       const res = await fetch(`${API_BASE_URL}/api/registrations/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -207,7 +189,7 @@ export default function CustomerDashboard() {
         );
       }
     } catch (error) {
-      console.error("Failed to fetch registrations", error);
+      console.error('Failed to fetch registrations', error);
       if (mountedRef.current) {
         setRegistrationsError(
           "Unable to load your registered events. Please try again later.",
@@ -226,7 +208,7 @@ export default function CustomerDashboard() {
   }, [fetchRegistrations]);
 
   useEffect(() => {
-    if (activeTab === "Browse Events") {
+    if (activeTab === 'Browse Events') {
       queueMicrotask(() => {
         fetchAvailableEvents();
       });
@@ -239,7 +221,7 @@ export default function CustomerDashboard() {
   );
 
   useEffect(() => {
-    if (activeTab !== "Browse Events" || availableEventIds.length === 0) {
+    if (activeTab !== 'Browse Events' || availableEventIds.length === 0) {
       return undefined;
     }
 
@@ -274,7 +256,7 @@ export default function CustomerDashboard() {
 
     const joinRooms = () => {
       availableEventIds.forEach((eventId) => {
-        socket.emit("event:join", { eventId });
+        socket.emit('event:join', { eventId });
       });
     };
 
@@ -411,14 +393,14 @@ export default function CustomerDashboard() {
 
   const handleCancelRegistration = async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem('token');
       const response = await fetch(
         `${API_BASE_URL}/api/registrations/${selectedRegistrationId}/cancel`,
         {
-          method: "DELETE",
+          method: 'DELETE',
           headers: {
             Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
+            'Content-Type': 'application/json',
           },
         },
       );
@@ -531,6 +513,7 @@ export default function CustomerDashboard() {
       </div>
     );
   }
+
   return (
     <div className="min-h-screen bg-background text-foreground pt-32 px-4 sm:px-6 lg:px-8 font-sans selection:bg-purple-500/30 relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
@@ -619,7 +602,7 @@ export default function CustomerDashboard() {
           </div>
 
           <AnimatePresence mode="popLayout">
-            {registrationsError && activeTab !== "Browse Events" && (
+            {registrationsError && activeTab !== 'Browse Events' && (
               <motion.div
                 initial={{ opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -629,7 +612,7 @@ export default function CustomerDashboard() {
               </motion.div>
             )}
 
-            {activeTab === "Upcoming Tickets" && (
+            {activeTab === 'Upcoming Tickets' && (
               <div className="space-y-6">
                 {upcomingEvents.length === 0 ? (
                   <motion.div
