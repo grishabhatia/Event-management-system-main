@@ -116,8 +116,7 @@ export default function FooterStandard() {
             {/* Social Icons */}
             <div className="flex items-center gap-2">
               <div className="flex gap-2">
-                {data().socialLinks.map(
-                  ({ icon: IconComponent, label, href }) => (
+                {data().socialLinks.map(({ icon, label, href }) => (
                     <Button
                       key={label}
                       size="icon"
@@ -126,11 +125,10 @@ export default function FooterStandard() {
                       className="hover:bg-primary dark:hover:bg-primary !border-primary/30 cursor-pointer shadow-none transition-all duration-500 hover:scale-110 hover:-rotate-12 hover:text-white hover:shadow-md"
                     >
                       <a href={href}>
-                        <IconComponent className="h-4 w-4" />
+                        {React.createElement(icon, { className: "h-4 w-4" })}
                       </a>
                     </Button>
-                  )
-                )}
+                  ))}
               </div>
             </div>
 
@@ -208,7 +206,7 @@ export default function FooterStandard() {
           </div>
         </div>
 
-        {/* Bottom */}
+               {/* Bottom */}
         <div className="animate-rotate-3d via-primary h-px w-full bg-gradient-to-r from-transparent to-transparent" />
 
         <div className="text-muted-foreground container m-auto flex flex-col items-center justify-between gap-4 p-4 text-xs md:flex-row md:px-0 md:text-sm">

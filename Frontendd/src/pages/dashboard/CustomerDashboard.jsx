@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar,
@@ -23,6 +29,16 @@ import jsPDF from "jspdf";
 
 const CATEGORIES = ["Tech", "Sports", "Cultural", "Workshop", "Music", "Other"];
 
+const getEventDate = (registration) => {
+  if (!registration?.event?.date) return null;
+
+  const eventDate = new Date(registration.event.date);
+  return Number.isNaN(eventDate.getTime()) ? null : eventDate;
+};
+
+const isActiveRegistration = (registration) =>
+  registration?.event && registration.status !== "cancelled";
+
 export default function CustomerDashboard() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -41,7 +57,9 @@ export default function CustomerDashboard() {
     () => searchParams.get("category") || "",
   );
   const [isFetching, setIsFetching] = useState(false);
+  const [registrationsError, setRegistrationsError] = useState("");
   const [savedEvents, setSavedEvents] = useState([]);
+
   const ticketRef = useRef(null);
   const mountedRef = useRef(true);
   const socketRef = useRef(null);
@@ -49,10 +67,20 @@ export default function CustomerDashboard() {
   const highlightTimeoutsRef = useRef({});
 
   const debouncedSearch = useDebounce(searchQuery, 400);
-  const availableEventIds = useMemo(
-    () => availableEvents.map((evt) => evt?._id).filter(Boolean),
-    [availableEvents],
-  );
+
+  useEffect(() => {
+    const nextSearch = searchParams.get("q") || "";
+    const nextCategory = searchParams.get("category") || "";
+
+    queueMicrotask(() => {
+      setSearchQuery((current) =>
+        current === nextSearch ? current : nextSearch,
+      );
+      setSelectedCategory((current) =>
+        current === nextCategory ? current : nextCategory,
+      );
+    });
+  }, [searchParams]);
 
   useEffect(() => {
     return () => {
@@ -96,6 +124,7 @@ export default function CustomerDashboard() {
 
   const fetchAvailableEvents = useCallback(async () => {
     try {
+      await Promise.resolve();
       setIsFetching(true);
 
       const params = new URLSearchParams();
@@ -160,32 +189,54 @@ export default function CustomerDashboard() {
 
   const fetchRegistrations = useCallback(async () => {
     try {
-      if (mountedRef.current) setLoading(true);
       const token = localStorage.getItem("token");
       const res = await fetch(`${API_BASE_URL}/api/registrations/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (res.ok && mountedRef.current) {
-        const data = await res.json();
-        setRegistrations(data.registrations || []);
+      if (!res.ok) {
+        throw new Error("Failed to fetch registrations");
+      }
+
+      const data = await res.json();
+
+      if (mountedRef.current) {
+        setRegistrationsError("");
+        setRegistrations(
+          Array.isArray(data.registrations) ? data.registrations : [],
+        );
       }
     } catch (error) {
       console.error("Failed to fetch registrations", error);
+      if (mountedRef.current) {
+        setRegistrationsError(
+          "Unable to load your registered events. Please try again later.",
+        );
+        setRegistrations([]);
+      }
     } finally {
       if (mountedRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (activeTab === "Browse Events") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      fetchAvailableEvents();
-    } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+    queueMicrotask(() => {
       fetchRegistrations();
+    });
+  }, [fetchRegistrations]);
+
+  useEffect(() => {
+    if (activeTab === "Browse Events") {
+      queueMicrotask(() => {
+        fetchAvailableEvents();
+      });
     }
-  }, [activeTab, fetchAvailableEvents, fetchRegistrations]);
+  }, [activeTab, fetchAvailableEvents]);
+
+  const availableEventIds = useMemo(
+    () => availableEvents.map((evt) => evt?._id).filter(Boolean),
+    [availableEvents],
+  );
 
   useEffect(() => {
     if (activeTab !== "Browse Events" || availableEventIds.length === 0) {
@@ -199,9 +250,7 @@ export default function CustomerDashboard() {
 
     socketRef.current = socket;
 
-    const eventIds = availableEventIds;
-
-    joinedEventIdsRef.current = eventIds;
+    joinedEventIdsRef.current = availableEventIds;
 
     const pulseEvent = (eventId) => {
       setHighlightedEvents((prev) => ({
@@ -224,7 +273,7 @@ export default function CustomerDashboard() {
     };
 
     const joinRooms = () => {
-      eventIds.forEach((eventId) => {
+      availableEventIds.forEach((eventId) => {
         socket.emit("event:join", { eventId });
       });
     };
@@ -311,6 +360,7 @@ export default function CustomerDashboard() {
         toast.success(data.message || "Successfully registered!");
         setActiveTab("Upcoming Tickets");
         fetchRegistrations();
+        fetchSavedEvents();
       } else {
         toast.error(data.message || "Registration failed");
       }
@@ -446,18 +496,33 @@ export default function CustomerDashboard() {
     }
   };
 
-  const upcomingEvents = registrations.filter(
-    (reg) =>
-      reg.event &&
-      reg.status !== "cancelled" &&
-      new Date(reg.event.date) >= new Date(),
-  );
-  const pastEvents = registrations.filter(
-    (reg) =>
-      reg.event &&
-      reg.status !== "cancelled" &&
-      new Date(reg.event.date) < new Date(),
-  );
+  const { upcomingEvents, pastEvents } = useMemo(() => {
+    const now = new Date();
+
+    return registrations.reduce(
+      (groupedEvents, registration) => {
+        if (!isActiveRegistration(registration)) {
+          return groupedEvents;
+        }
+
+        const eventDate = getEventDate(registration);
+
+        if (!eventDate) {
+          groupedEvents.upcomingEvents.push(registration);
+          return groupedEvents;
+        }
+
+        if (eventDate >= now) {
+          groupedEvents.upcomingEvents.push(registration);
+        } else {
+          groupedEvents.pastEvents.push(registration);
+        }
+
+        return groupedEvents;
+      },
+      { upcomingEvents: [], pastEvents: [] },
+    );
+  }, [registrations]);
 
   if (loading) {
     return (
@@ -554,6 +619,16 @@ export default function CustomerDashboard() {
           </div>
 
           <AnimatePresence mode="popLayout">
+            {registrationsError && activeTab !== "Browse Events" && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500"
+              >
+                {registrationsError}
+              </motion.div>
+            )}
+
             {activeTab === "Upcoming Tickets" && (
               <div className="space-y-6">
                 {upcomingEvents.length === 0 ? (
@@ -696,9 +771,11 @@ export default function CustomerDashboard() {
                     <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
                       <Calendar className="w-8 h-8 text-muted-foreground" />
                     </div>
+
                     <h3 className="text-lg font-medium text-foreground">
                       No past events
                     </h3>
+
                     <p className="text-muted-foreground mt-2 max-w-sm">
                       You haven't attended any past events yet.
                     </p>
@@ -729,11 +806,13 @@ export default function CustomerDashboard() {
                               </div>
                             )}
                           </div>
+
                           <div className="flex-1 flex flex-col justify-center">
                             <div className="flex justify-between items-start">
                               <h3 className="text-base font-semibold text-foreground">
                                 {reg.event?.title}
                               </h3>
+
                               <span
                                 className={`inline-flex items-center text-xs px-2 py-1 rounded-full border ${
                                   reg.status === "attended"
@@ -746,35 +825,13 @@ export default function CustomerDashboard() {
                                   : "Completed"}
                               </span>
                             </div>
+
                             <p className="text-muted-foreground text-xs mt-1">
                               {reg.event?.date
                                 ? new Date(reg.event.date).toLocaleDateString()
                                 : "TBA"}{" "}
                               • {reg.event?.location}
                             </p>
-                            {reg.status === "attended" && (
-                              <div className="mt-4">
-                                <Button
-                                  onClick={() =>
-                                    generateCertificate({
-                                      attendeeName: user?.name || "Participant",
-                                      eventTitle: reg.event?.title || "Event",
-                                      eventDate: reg.event?.date
-                                        ? new Date(
-                                            reg.event.date,
-                                          ).toLocaleDateString()
-                                        : "TBA",
-                                      organizerName: "eventOne",
-                                      registrationId: reg._id,
-                                    })
-                                  }
-                                  className="bg-green-600 hover:bg-green-700 text-white text-xs h-8"
-                                >
-                                  <Download className="w-3 h-3 mr-2" />
-                                  Download Certificate
-                                </Button>
-                              </div>
-                            )}
                           </div>
                         </div>
                       </motion.div>
