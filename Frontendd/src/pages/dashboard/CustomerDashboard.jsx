@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Calendar, MapPin, Ticket, X, Download, Search, Heart } from 'lucide-react';
+import { Calendar, MapPin, Ticket, X, Download, Search, Heart, Calendar, MapPin, Ticket } from 'lucide-react';
 import { io } from 'socket.io-client';
+import  {Calendar as BigCalendar,momentLocalizer,} from 'react-big-calendar';
+import moment from 'moment';
+import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { Button } from '../../components/ui/button';
 import { useAuth } from '../../context/AuthContext';
-import toast from 'react-hot-toast';
-import { Link, useSearchParams } from 'react-router-dom';
+
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../../config';
 import ConfirmationModal from '../../components/ui/confirmation-modal';
 import { useDebounce } from '../../hooks/useDebounce';
@@ -13,7 +16,15 @@ import { generateCertificate } from '../../utils/generateCertificate';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
-const CATEGORIES = ['Tech', 'Sports', 'Cultural', 'Workshop', 'Music', 'Other'];
+const localizer = momentLocalizer(moment);
+
+const categoryColors = {
+  Tech: '#2563eb',
+  Sports: '#16a34a',
+  Cultural: '#9333ea',
+  Workshop: '#ea580c',
+  Business: '#dc2626',
+};
 
 const getEventDate = (registration) => {
   if (!registration?.event?.date) return null;
@@ -33,7 +44,9 @@ export default function CustomerDashboard() {
   const [activeTab, setActiveTab] = useState('Upcoming Tickets');
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [availableEvents, setAvailableEvents] = useState([]);
+  const [viewMode, setViewMode] = useState('grid');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedRegistrationId, setSelectedRegistrationId] = useState(null);
   const [selectedRegistrationId, setSelectedRegistrationId] = useState(null);
   const [highlightedEvents, setHighlightedEvents] = useState({});
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
@@ -41,14 +54,9 @@ export default function CustomerDashboard() {
   const [isFetching, setIsFetching] = useState(false);
   const [registrationsError, setRegistrationsError] = useState('');
   const [savedEvents, setSavedEvents] = useState([]);
-
   const ticketRef = useRef(null);
   const mountedRef = useRef(true);
-  const socketRef = useRef(null);
-  const joinedEventIdsRef = useRef([]);
-  const highlightTimeoutsRef = useRef({});
-
-  const debouncedSearch = useDebounce(searchQuery, 400);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const nextSearch = searchParams.get("q") || "";
@@ -65,12 +73,9 @@ export default function CustomerDashboard() {
   }, [searchParams]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      Object.values(highlightTimeoutsRef.current).forEach((timeoutId) => {
-        clearTimeout(timeoutId);
-      });
-      highlightTimeoutsRef.current = {};
     };
   }, []);
 
@@ -105,36 +110,44 @@ export default function CustomerDashboard() {
   ]);
 
   const fetchAvailableEvents = useCallback(async () => {
+    const tags = searchParams.get('tags');
     try {
-      await Promise.resolve();
-      setIsFetching(true);
-
-      const params = new URLSearchParams();
-      params.set("status", "approved");
-      params.set("page", searchParams.get("page") || "1");
-      params.set("limit", "12");
-
-      const q = searchParams.get("q");
-      const category = searchParams.get("category");
-
-      if (q) params.set("q", q);
-      if (category) params.set("category", category);
-
-      const url = `${API_BASE_URL}/api/events?${params.toString()}`;
+      if (mountedRef.current) setLoading(true);
+      let url = `${API_BASE_URL}/api/events?status=approved`;
+      if (tags) url += `&tags=${tags}`;
       const res = await fetch(url);
-
-      if (!res.ok) {
-        throw new Error("Failed to fetch events");
+      if (res.ok && mountedRef.current) {
+        const data = await res.json();
+        const upcoming = (data.events || []).filter(
+          (evt) => new Date(evt.date) >= new Date()
+        );
+        setAvailableEvents(upcoming);
       }
+    } catch (error) {
+      console.error('Failed to fetch events', error);
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [searchParams]);
 
-      const data = await res.json();
-      const upcoming = (data.events || []).filter(
-        (evt) => new Date(evt.date) >= new Date(),
-      );
+  const fetchAvailableEvents = useCallback(async () => {
+    try {
+      if (mountedRef.current) setLoading(true);
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE_URL}/api/registrations/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok && mountedRef.current) {
+        const data = await res.json();
+
+        const upcoming = (data.events || []).filter(
+            (evt) => new Date(evt.date) >= new Date()
+        );
 
       if (mountedRef.current) {
         setAvailableEvents(upcoming);
       }
+    }
     } catch (error) {
       console.error("Failed to fetch events:", error);
     } finally {
@@ -337,7 +350,6 @@ export default function CustomerDashboard() {
       );
 
       const data = await res.json();
-
       if (res.ok) {
         toast.success(data.message || "Successfully registered!");
         setActiveTab("Upcoming Tickets");
@@ -394,7 +406,7 @@ export default function CustomerDashboard() {
   const handleCancelRegistration = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(
+      const res = await fetch(
         `${API_BASE_URL}/api/registrations/${selectedRegistrationId}/cancel`,
         {
           method: 'DELETE',
@@ -418,8 +430,6 @@ export default function CustomerDashboard() {
             : reg,
         ),
       );
-
-      setIsModalOpen(false);
       setSelectedRegistrationId(null);
       toast.success("Registration cancelled successfully!");
     } catch (error) {
@@ -431,7 +441,6 @@ export default function CustomerDashboard() {
   const handleDownloadTicket = async () => {
     try {
       if (!ticketRef.current || !selectedTicket) return;
-
       const canvas = await html2canvas(ticketRef.current, {
         scale: 2,
         useCORS: true,
@@ -449,7 +458,6 @@ export default function CustomerDashboard() {
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const imgProps = pdf.getImageProperties(imgData);
       const pdfHeight = (imgProps.height * (pdfWidth - 20)) / imgProps.width;
-
       pdf.setFontSize(20);
       pdf.setTextColor(244, 63, 94);
       pdf.text("EventOne Ticket", 15, 15);
@@ -457,11 +465,10 @@ export default function CustomerDashboard() {
       const maxHeight = 250;
       let finalWidth = pdfWidth - 20;
       let finalHeight = pdfHeight;
-
       if (pdfHeight > maxHeight) {
-        const scaleFactor = maxHeight / pdfHeight;
+        const scale = maxHeight / pdfHeight;
         finalHeight = maxHeight;
-        finalWidth = finalWidth * scaleFactor;
+        finalWidth = finalWidth * scale;
       }
 
       pdf.addImage(imgData, "PNG", 10, 25, finalWidth, finalHeight);
@@ -478,33 +485,26 @@ export default function CustomerDashboard() {
     }
   };
 
-  const { upcomingEvents, pastEvents } = useMemo(() => {
-    const now = new Date();
+  const upcomingEvents = registrations.filter(
+    (reg) =>
+      reg.event &&
+      reg.status !== 'cancelled' &&
+      new Date(reg.event.date) >= new Date()
+  );
 
-    return registrations.reduce(
-      (groupedEvents, registration) => {
-        if (!isActiveRegistration(registration)) {
-          return groupedEvents;
-        }
+  const pastEvents = registrations.filter(
+    (reg) =>
+      reg.event &&
+      reg.status !== 'cancelled' &&
+      new Date(reg.event.date) < new Date()
+  );
 
-        const eventDate = getEventDate(registration);
-
-        if (!eventDate) {
-          groupedEvents.upcomingEvents.push(registration);
-          return groupedEvents;
-        }
-
-        if (eventDate >= now) {
-          groupedEvents.upcomingEvents.push(registration);
-        } else {
-          groupedEvents.pastEvents.push(registration);
-        }
-
-        return groupedEvents;
-      },
-      { upcomingEvents: [], pastEvents: [] },
-    );
-  }, [registrations]);
+  const calendarEvents = availableEvents.map((event) => ({
+    title: event.title,
+    start: new Date(event.date),
+    end: new Date(event.date),
+    resource: event,
+  }));
 
   if (loading) {
     return (
@@ -523,11 +523,12 @@ export default function CustomerDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto relative z-10">
+        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-12">
           <div>
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
-              Welcome back,{" "}
-              <span className="text-rose-500">{user?.name || "User"}</span>
+              Welcome back,{' '}
+              <span className="text-rose-500">{user?.name || 'User'}</span>
             </h1>
             <p className="text-muted-foreground mt-2 text-base">
               Manage your tickets and view your event history.
@@ -540,6 +541,7 @@ export default function CustomerDashboard() {
           </div>
         </div>
 
+        {/* Tabs */}
         <div className="mb-8 border-b border-border">
           <div className="flex space-x-8 overflow-x-auto no-scrollbar">
             {[
@@ -569,6 +571,7 @@ export default function CustomerDashboard() {
           </div>
         </div>
 
+        {/* Main Card */}
         <div className="bg-card/50 backdrop-blur-sm rounded-3xl p-6 md:p-8 min-h-[500px] border border-border shadow-sm">
           <div className="flex justify-between items-center mb-8">
             <h2 className="text-xl font-semibold text-foreground">
@@ -602,16 +605,7 @@ export default function CustomerDashboard() {
           </div>
 
           <AnimatePresence mode="popLayout">
-            {registrationsError && activeTab !== 'Browse Events' && (
-              <motion.div
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mb-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500"
-              >
-                {registrationsError}
-              </motion.div>
-            )}
-
+            {/* ── Upcoming Tickets ── */}
             {activeTab === 'Upcoming Tickets' && (
               <div className="space-y-6">
                 {upcomingEvents.length === 0 ? (
@@ -667,6 +661,7 @@ export default function CustomerDashboard() {
                               {reg.event?.category || "Event"}
                             </span>
                           </div>
+
                           <div className="flex-1 flex flex-col justify-between">
                             <div>
                               <div className="flex justify-between items-start">
@@ -711,8 +706,9 @@ export default function CustomerDashboard() {
                                 </span>
                               </div>
                             </div>
+
                             <div className="flex justify-between pt-4 md:pt-0 gap-2">
-                              {reg.status === "cancelled" ? null : (
+                              {reg.status !== 'cancelled' && (
                                 <>
                                   <Button
                                     variant="outline"
@@ -743,7 +739,8 @@ export default function CustomerDashboard() {
               </div>
             )}
 
-            {activeTab === "Past Events" && (
+            {/* ── Past Events ── */}
+            {activeTab === 'Past Events' && (
               <div className="space-y-6">
                 {pastEvents.length === 0 ? (
                   <motion.div
@@ -754,13 +751,11 @@ export default function CustomerDashboard() {
                     <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
                       <Calendar className="w-8 h-8 text-muted-foreground" />
                     </div>
-
                     <h3 className="text-lg font-medium text-foreground">
                       No past events
                     </h3>
-
                     <p className="text-muted-foreground mt-2 max-w-sm">
-                      You haven't attended any past events yet.
+                      Events you've attended will appear here.
                     </p>
                   </motion.div>
                 ) : (
@@ -771,50 +766,58 @@ export default function CustomerDashboard() {
                         layout
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
                         transition={{ delay: idx * 0.05 }}
-                        className="group relative bg-card/60 border border-border rounded-2xl p-4 transition-colors shadow-sm opacity-75 hover:opacity-100"
+                        className="group relative bg-card border border-border rounded-2xl p-4 shadow-sm opacity-80"
                       >
                         <div className="flex flex-col md:flex-row gap-6">
-                          <div className="w-full md:w-40 h-24 rounded-xl overflow-hidden shrink-0 bg-muted grayscale group-hover:grayscale-0 transition-all">
+                          <div className="w-full md:w-56 h-36 rounded-xl overflow-hidden shrink-0 bg-muted relative">
                             {reg.event?.posterUrl ? (
                               <img
                                 src={reg.event.posterUrl}
                                 alt={reg.event.title}
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-cover grayscale"
                               />
                             ) : (
                               <div className="flex items-center justify-center h-full text-muted-foreground">
-                                <Calendar className="w-6 h-6" />
+                                <Calendar className="w-8 h-8" />
                               </div>
                             )}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                            <span className="absolute bottom-2 left-2 text-xs text-white/90 font-medium px-2 py-0.5 bg-black/40 backdrop-blur-sm rounded">
+                              {reg.event?.category || 'Event'}
+                            </span>
                           </div>
 
-                          <div className="flex-1 flex flex-col justify-center">
-                            <div className="flex justify-between items-start">
-                              <h3 className="text-base font-semibold text-foreground">
-                                {reg.event?.title}
-                              </h3>
-
-                              <span
-                                className={`inline-flex items-center text-xs px-2 py-1 rounded-full border ${
-                                  reg.status === "attended"
-                                    ? "bg-purple-500/10 text-purple-500 border-purple-500/20"
-                                    : "bg-secondary text-muted-foreground"
-                                }`}
-                              >
-                                {reg.status === "attended"
-                                  ? "Attended"
-                                  : "Completed"}
-                              </span>
+                          <div className="flex-1 flex flex-col justify-between">
+                            <div>
+                              <div className="flex justify-between items-start">
+                                <h3 className="text-lg font-semibold text-foreground">
+                                  {reg.event?.title || 'Unknown Event'}
+                                </h3>
+                                <span className="inline-flex items-center text-xs px-2 py-1 rounded-full border bg-purple-500/10 text-purple-500 border-purple-500/20">
+                                  {reg.status === 'attended' ? 'Attended' : 'Past'}
+                                </span>
+                              </div>
+                              <p className="text-muted-foreground text-sm mt-2 line-clamp-2 max-w-2xl">
+                                {reg.event?.description}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
+                                <span className="flex items-center">
+                                  <Calendar className="w-3 h-3 mr-1.5" />
+                                  {reg.event?.date
+                                    ? new Date(reg.event.date).toLocaleDateString()
+                                    : 'TBA'}
+                                </span>
+                                <span className="flex items-center">
+                                  <MapPin className="w-3 h-3 mr-1.5" />
+                                  {reg.event?.location || 'TBA'}
+                                </span>
+                                <span className="flex items-center">
+                                  <Ticket className="w-3 h-3 mr-1.5" />
+                                  Ticket ID: {reg._id.slice(-6).toUpperCase()}
+                                </span>
+                              </div>
                             </div>
-
-                            <p className="text-muted-foreground text-xs mt-1">
-                              {reg.event?.date
-                                ? new Date(reg.event.date).toLocaleDateString()
-                                : "TBA"}{" "}
-                              • {reg.event?.location}
-                            </p>
                           </div>
                         </div>
                       </motion.div>
@@ -824,28 +827,45 @@ export default function CustomerDashboard() {
               </div>
             )}
 
-            {activeTab === "Browse Events" && (
-              <div className="space-y-6">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search events by title or description..."
-                    className="w-full pl-9 pr-9 py-2 rounded-xl bg-muted/50 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-rose-500 transition"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
+            <div className="space-y-6">
+  <div className="flex gap-3 items-center">
+    <div className="relative flex-1">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
 
-                <div className="flex flex-wrap gap-2">
+      <input
+        type="text"
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder="Search events by title or description..."
+        className="w-full pl-9 pr-9 py-2 rounded-xl bg-muted/50 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-rose-500 transition"
+      />
+
+      {searchQuery && (
+        <button
+          onClick={() => setSearchQuery("")}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
+    </div>
+
+    <Button
+      variant={viewMode === "grid" ? "default" : "outline"}
+      onClick={() => setViewMode("grid")}
+    >
+      Grid
+    </Button>
+
+    <Button
+      variant={viewMode === "calendar" ? "default" : "outline"}
+      onClick={() => setViewMode("calendar")}
+    >
+      Calendar
+    </Button>
+  </div>
+
+  <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => setSelectedCategory("")}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
@@ -873,13 +893,7 @@ export default function CustomerDashboard() {
                   ))}
                 </div>
 
-                {isFetching && (
-                  <div className="flex justify-center py-6">
-                    <div className="w-6 h-6 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
-                  </div>
-                )}
-
-                {!isFetching && availableEvents.length === 0 && (
+                {availableEvents.length === 0 ? (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -889,10 +903,10 @@ export default function CustomerDashboard() {
                       <Calendar className="w-8 h-8 text-muted-foreground" />
                     </div>
                     <h3 className="text-lg font-medium text-foreground">
-                      No events found matching your search
+                      No upcoming events found
                     </h3>
-                    <p className="text-muted-foreground mt-2 max-w-sm text-sm">
-                      Try a different keyword or remove the category filter.
+                    <p className="text-muted-foreground mt-2 max-w-sm">
+                      Check back later for new events!
                     </p>
                     <Button
                       className="mt-6 bg-rose-600 hover:bg-rose-700 text-white text-xs"
@@ -904,9 +918,33 @@ export default function CustomerDashboard() {
                       Clear Filters
                     </Button>
                   </motion.div>
-                )}
-
-                {!isFetching && availableEvents.length > 0 && (
+                ) : viewMode === 'calendar' ? (
+                  <div className="bg-white text-black rounded-2xl p-4 overflow-x-auto">
+                    <div className="h-[700px] min-w-[900px]">
+                      <BigCalendar
+                        localizer={localizer}
+                        events={calendarEvents}
+                        startAccessor="start"
+                        endAccessor="end"
+                        views={['month', 'week']}
+                        defaultView="month"
+                        popup
+                        eventPropGetter={(event) => ({
+                          style: {
+                            backgroundColor:
+                              categoryColors[event.resource.category] || '#475569',
+                            borderRadius: '6px',
+                            border: 'none',
+                            color: 'white',
+                          },
+                        })}
+                        onSelectEvent={(event) =>
+                          navigate(`/events/${event.resource._id}`)
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : (
                   <div className="grid grid-cols-1 gap-6">
                     {availableEvents.map((evt, idx) => {
                       const isRegistered = registrations.some(
@@ -1055,7 +1093,7 @@ export default function CustomerDashboard() {
                   </div>
                 )}
               </div>
-            )}
+            
 
             {activeTab === "Saved Events" && (
               <div className="space-y-6">
