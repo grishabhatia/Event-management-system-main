@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Calendar, MapPin, Ticket, X, Download, Search, Heart, Calendar, MapPin, Ticket } from 'lucide-react';
+import { Calendar, MapPin, Ticket, X, Download, Search, Heart } from 'lucide-react';
 import { io } from 'socket.io-client';
 import  {Calendar as BigCalendar,momentLocalizer,} from 'react-big-calendar';
 import moment from 'moment';
